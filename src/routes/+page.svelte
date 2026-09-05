@@ -765,7 +765,7 @@
 							title={receipts
 								.map(
 									(r) =>
-										`@${agentMap.get(r.agent_id)?.handle || r.agent_id.slice(0, 8)}: ${r.state}${r.read_at ? ` (${formatTimeAgo(r.read_at)})` : ''}`
+										`@${r.agent?.handle || r.agent?.id?.slice(0, 8) || 'agent'}: ${r.state}${r.read_at ? ` (${formatTimeAgo(r.read_at)})` : ''}`
 								)
 								.join('\n')}
 						>

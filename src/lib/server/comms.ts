@@ -62,7 +62,7 @@ export interface CommsHandshake {
 }
 
 export interface CommsReceipt {
-	agent_id: string;
+	agent: CommsAgent;
 	state: 'read' | 'unread';
 	read_at?: string;
 }
