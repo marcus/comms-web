@@ -4,6 +4,8 @@
 
 Built with **SvelteKit + Svelte 5 runes**, styled in a high-density dark-first Linear design pattern, and connected directly to the Comms Unix domain socket.
 
+![Comms Web Interface](docs/screenshot.png)
+
 ---
 
 ## Features
