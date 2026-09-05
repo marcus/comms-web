@@ -34,6 +34,28 @@ export function renderMarkdown(text: string): string {
 	return marked.parse(text, { gfm: true, breaks: true }) as string;
 }
 
+/* Subtle per-handle colors, drawn from the theme palette (no neon, no purple) */
+const HANDLE_COLORS = [
+	'#c0982f', // gold
+	'#4a8f8f', // teal
+	'#5b8f63', // sage
+	'#c17c5b', // terracotta
+	'#6f9fc4', // dusty blue
+	'#c06c64', // rose
+	'#9a8f6b', // sand
+	'#8b9298' // gray
+];
+
+export function getHandleColor(handle?: string): { color: string; bg: string } {
+	if (!handle) return { color: 'var(--text-secondary)', bg: 'rgba(255, 255, 255, 0.06)' };
+	let hash = 0;
+	for (let i = 0; i < handle.length; i++) {
+		hash = (hash * 31 + handle.charCodeAt(i)) >>> 0;
+	}
+	const color = HANDLE_COLORS[hash % HANDLE_COLORS.length];
+	return { color, bg: color + '24' };
+}
+
 export function getHarnessStyle(harness?: string): { color: string; bg: string } {
 	switch (harness?.toLowerCase()) {
 		case 'codex':

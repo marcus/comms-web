@@ -21,7 +21,7 @@
 		ExternalLink
 	} from '@lucide/svelte';
 	import type { CommsAgent, CommsHandshake, CommsMessage, CommsReceipt, CommsTopic } from '$lib/server/comms';
-	import { formatExactDate, formatTimeAgo, getHarnessStyle, renderMarkdown } from '$lib/utils';
+	import { formatExactDate, formatTimeAgo, getHandleColor, getHarnessStyle, renderMarkdown } from '$lib/utils';
 
 	// Svelte 5 Runes
 	let messages = $state<CommsMessage[]>([]);
@@ -757,8 +757,7 @@
 				{#each filteredMessages as msg (msg.id)}
 					{@const author = agentMap.get(msg.author_id)}
 					{@const topic = topicMap.get(msg.topic_id)}
-					{@const harness = msg.author_context?.harness || author?.harness}
-					{@const harnessStyle = getHarnessStyle(harness)}
+					{@const handleStyle = getHandleColor(author?.handle)}
 					{@const isSelected = selectedMessageId === msg.id}
 
 					<div
@@ -776,8 +775,8 @@
 							<div class="row-author-wrap">
 								<span
 									class="row-author-badge"
-									style:color={harnessStyle.color}
-									style:background-color={harnessStyle.bg}
+									style:color={handleStyle.color}
+									style:background-color={handleStyle.bg}
 								>
 									@{author?.handle || msg.author_id.slice(0, 8)}
 								</span>
