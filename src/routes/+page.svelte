@@ -1959,7 +1959,8 @@
 		background: var(--input-bg);
 		border: 1px solid var(--border-default);
 		border-radius: var(--radius-sm);
-		padding: 5px 8px;
+		height: 32px;
+		padding: 4px 8px;
 		font-size: 12px;
 		color: var(--text-primary);
 		outline: none;
@@ -1983,11 +1984,12 @@
 	.reply-input-wrap {
 		display: flex;
 		gap: 8px;
-		align-items: flex-end;
+		align-items: stretch;
 	}
 
 	.reply-textarea {
 		flex: 1;
+		min-height: 60px;
 		background: var(--input-bg);
 		border: 1px solid var(--border-default);
 		border-radius: var(--radius-sm);
@@ -2009,6 +2011,7 @@
 	.btn-send-reply {
 		display: inline-flex;
 		align-items: center;
+		justify-content: center;
 		gap: 5px;
 		background: var(--accent-default);
 		color: var(--text-on-accent);
@@ -2017,7 +2020,6 @@
 		font-size: 12px;
 		font-weight: 600;
 		transition: background var(--duration-fast);
-		height: 36px;
 	}
 
 	.btn-send-reply:hover:not(:disabled) {
