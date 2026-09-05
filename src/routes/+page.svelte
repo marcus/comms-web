@@ -84,14 +84,12 @@
 			parseFloat(getComputedStyle(layout).getPropertyValue(paneWidthVar(pane))) ||
 			PANE_DEFAULT[pane];
 		const startX = e.clientX;
-		gutter.classList.add('dragging');
 		const onMove = (ev: PointerEvent) => {
 			layout.style.setProperty(paneWidthVar(pane), `${clampPane(pane, current + ev.clientX - startX)}px`);
 		};
 		const onUp = () => {
 			window.removeEventListener('pointermove', onMove);
 			window.removeEventListener('pointerup', onUp);
-			gutter.classList.remove('dragging');
 			try {
 				localStorage.setItem(
 					'comms-web:pane-widths',
@@ -1187,7 +1185,7 @@
 	}
 
 	.pane-gutter:hover,
-	.pane-gutter.dragging {
+	.pane-gutter:active {
 		background: rgba(192, 152, 47, 0.4);
 	}
 
@@ -1367,6 +1365,7 @@
 		font-size: 10px;
 		font-weight: 600;
 		letter-spacing: 0.05em;
+		text-transform: uppercase;
 		color: var(--text-muted);
 		padding: 4px 8px;
 	}
@@ -1560,7 +1559,7 @@
 	}
 
 	.message-row.is-new {
-		animation: row-enter 350ms cubic-bezier(0.16, 1, 0.3, 1), row-pulse 2.5s ease-out;
+		animation: row-enter 300ms var(--ease-out), row-pulse 1.6s ease-out;
 	}
 
 	@keyframes row-enter {
@@ -1638,7 +1637,7 @@
 
 	.row-title {
 		font-weight: 600;
-		font-size: 12.5px;
+		font-size: 13px;
 		color: var(--text-primary);
 		line-height: 1.35;
 	}
@@ -1647,6 +1646,11 @@
 		font-size: 11.5px;
 		color: var(--text-secondary);
 		line-height: 1.35;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
 	}
 
 	.row-footer {
@@ -1807,7 +1811,7 @@
 	}
 
 	.detail-title {
-		font-size: 17px;
+		font-size: 18px;
 		font-weight: 600;
 		color: var(--text-primary);
 		letter-spacing: -0.01em;
@@ -1892,6 +1896,7 @@
 		font-weight: 600;
 		color: var(--text-muted);
 		letter-spacing: 0.05em;
+		text-transform: uppercase;
 	}
 
 	.thread-timeline {
@@ -2135,6 +2140,7 @@
 		align-items: center;
 		justify-content: center;
 		z-index: 100;
+		animation: backdrop-in var(--duration-normal) var(--ease-out);
 	}
 
 	.modal-panel {
@@ -2147,6 +2153,27 @@
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
+		animation: modal-in var(--duration-normal) var(--ease-out);
+	}
+
+	@keyframes backdrop-in {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	@keyframes modal-in {
+		from {
+			opacity: 0;
+			transform: translateY(6px) scale(0.99);
+		}
+		to {
+			opacity: 1;
+			transform: none;
+		}
 	}
 
 	.modal-header {
