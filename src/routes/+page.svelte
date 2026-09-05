@@ -1287,19 +1287,21 @@
 
 	.search-input {
 		width: 100%;
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid var(--border-subtle);
+		background: var(--input-bg);
+		border: 1px solid var(--border-default);
 		border-radius: var(--radius-sm);
-		padding: 5px 24px 5px 26px;
-		font-size: 12px;
+		padding: 6px 24px 6px 26px;
+		font-size: 12.5px;
 		color: var(--text-primary);
 		outline: none;
-		transition: border-color var(--duration-fast);
+		transition: border-color var(--duration-fast), box-shadow var(--duration-fast),
+			background var(--duration-fast);
 	}
 
 	.search-input:focus {
 		border-color: var(--accent-default);
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--input-bg-focus);
+		box-shadow: var(--focus-ring);
 	}
 
 	.search-clear {
@@ -1986,13 +1988,21 @@
 	}
 
 	.reply-author-select {
-		background: rgba(255, 255, 255, 0.05);
-		border: 1px solid var(--border-subtle);
+		background: var(--input-bg);
+		border: 1px solid var(--border-default);
 		border-radius: var(--radius-sm);
-		padding: 2px 6px;
-		font-size: 11px;
+		padding: 5px 8px;
+		font-size: 12px;
 		color: var(--text-primary);
 		outline: none;
+		transition: border-color var(--duration-fast), box-shadow var(--duration-fast),
+			background var(--duration-fast);
+	}
+
+	.reply-author-select:focus {
+		border-color: var(--accent-default);
+		background: var(--input-bg-focus);
+		box-shadow: var(--focus-ring);
 	}
 
 	.reply-shortcut-hint {
@@ -2010,20 +2020,22 @@
 
 	.reply-textarea {
 		flex: 1;
-		background: rgba(255, 255, 255, 0.04);
+		background: var(--input-bg);
 		border: 1px solid var(--border-default);
 		border-radius: var(--radius-sm);
-		padding: 8px 10px;
+		padding: var(--input-padding);
 		font-size: 12.5px;
 		color: var(--text-primary);
 		outline: none;
 		resize: none;
-		transition: border-color var(--duration-fast);
+		transition: border-color var(--duration-fast), box-shadow var(--duration-fast),
+			background var(--duration-fast);
 	}
 
 	.reply-textarea:focus {
 		border-color: var(--accent-default);
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--input-bg-focus);
+		box-shadow: var(--focus-ring);
 	}
 
 	.btn-send-reply {
@@ -2199,19 +2211,21 @@
 	}
 
 	.form-input {
-		background: rgba(255, 255, 255, 0.04);
+		background: var(--input-bg);
 		border: 1px solid var(--border-default);
 		border-radius: var(--radius-sm);
-		padding: 6px 10px;
+		padding: var(--input-padding);
 		font-size: 12.5px;
 		color: var(--text-primary);
 		outline: none;
-		transition: border-color var(--duration-fast);
+		transition: border-color var(--duration-fast), box-shadow var(--duration-fast),
+			background var(--duration-fast);
 	}
 
 	.form-input:focus {
 		border-color: var(--accent-default);
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--input-bg-focus);
+		box-shadow: var(--focus-ring);
 	}
 
 	.form-textarea {
