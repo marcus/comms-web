@@ -1,0 +1,2088 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import {
+		MessageSquare,
+		Hash,
+		User,
+		Send,
+		Clock,
+		CheckCheck,
+		Copy,
+		Plus,
+		RefreshCw,
+		Radio,
+		Search,
+		X,
+		ChevronRight,
+		CornerDownRight,
+		Inbox,
+		ShieldCheck,
+		Terminal,
+		ExternalLink
+	} from '@lucide/svelte';
+	import type { CommsAgent, CommsHandshake, CommsMessage, CommsReceipt, CommsTopic } from '$lib/server/comms';
+	import { formatExactDate, formatTimeAgo, getHarnessStyle, renderMarkdown } from '$lib/utils';
+
+	// Svelte 5 Runes
+	let messages = $state<CommsMessage[]>([]);
+	let topics = $state<CommsTopic[]>([]);
+	let agents = $state<CommsAgent[]>([]);
+	let status = $state<CommsHandshake | null>(null);
+
+	let selectedMessageId = $state<string | null>(null);
+	let selectedTopicId = $state<string | null>(null);
+	let selectedAgentId = $state<string | null>(null);
+	let activeFilter = $state<'all' | 'public' | 'direct'>('all');
+	let searchQuery = $state('');
+
+	let threadMessages = $state<CommsMessage[]>([]);
+	let receipts = $state<CommsReceipt[]>([]);
+	let loadingThread = $state(false);
+	let loadingReceipts = $state(false);
+
+	let isRefreshing = $state(false);
+	let liveConnected = $state(false);
+	let copyFeedback = $state(false);
+	let copyBodyFeedback = $state(false);
+
+	// Reply & Compose
+	let replyBody = $state('');
+	let isReplying = $state(false);
+	let replyAuthor = $state('');
+
+	let showComposeModal = $state(false);
+	let composeType = $state<'topic' | 'direct'>('topic');
+	let composeTopic = $state('');
+	let composeRecipient = $state('');
+	let composeTitle = $state('');
+	let composeBody = $state('');
+	let isComposing = $state(false);
+
+	let searchInputEl = $state<HTMLInputElement | null>(null);
+	let replyTextareaEl = $state<HTMLTextAreaElement | null>(null);
+
+	// Derived mappings
+	const agentMap = $derived(
+		new Map<string, CommsAgent>(agents.map((a) => [a.id, a]))
+	);
+
+	const topicMap = $derived(
+		new Map<string, CommsTopic>(topics.map((t) => [t.id, t]))
+	);
+
+	// Filtered messages
+	const filteredMessages = $derived.by(() => {
+		let list = [...messages];
+
+		if (selectedTopicId) {
+			list = list.filter((m) => m.topic_id === selectedTopicId);
+		} else if (selectedAgentId) {
+			list = list.filter((m) => m.author_id === selectedAgentId);
+		} else if (activeFilter === 'public') {
+			list = list.filter((m) => {
+				const top = topicMap.get(m.topic_id);
+				return !top || top.kind === 'public';
+			});
+		} else if (activeFilter === 'direct') {
+			list = list.filter((m) => {
+				const top = topicMap.get(m.topic_id);
+				return top && top.kind === 'direct';
+			});
+		}
+
+		if (searchQuery.trim()) {
+			const q = searchQuery.toLowerCase();
+			list = list.filter((m) => {
+				const author = agentMap.get(m.author_id);
+				const topic = topicMap.get(m.topic_id);
+				return (
+					m.title.toLowerCase().includes(q) ||
+					m.body.toLowerCase().includes(q) ||
+					(author && author.handle.toLowerCase().includes(q)) ||
+					(topic && topic.name.toLowerCase().includes(q)) ||
+					m.id.toLowerCase().includes(q)
+				);
+			});
+		}
+
+		return list;
+	});
+
+	const selectedMessage = $derived(
+		messages.find((m) => m.id === selectedMessageId) || null
+	);
+
+	// Public topics count vs direct count
+	const publicTopics = $derived(topics.filter((t) => t.kind === 'public'));
+	const directTopics = $derived(topics.filter((t) => t.kind === 'direct'));
+
+	async function loadData(showSpinner = true) {
+		if (showSpinner) isRefreshing = true;
+		try {
+			const res = await fetch('/api/data?limit=100');
+			if (res.ok) {
+				const data = await res.json();
+				status = data.status;
+				topics = data.topics;
+				agents = data.agents;
+				messages = data.messages;
+
+				if (!replyAuthor && agents.length > 0) {
+					replyAuthor = agents[0].handle;
+				}
+				if (!composeTopic && topics.length > 0) {
+					const firstPub = topics.find((t) => t.kind === 'public');
+					if (firstPub) composeTopic = firstPub.name;
+				}
+
+				// Select first message if none selected
+				if (!selectedMessageId && messages.length > 0) {
+					selectedMessageId = messages[0].id;
+				}
+			}
+		} catch (err) {
+			console.error('Failed to load comms data', err);
+		} finally {
+			if (showSpinner) isRefreshing = false;
+		}
+	}
+
+	async function selectMessage(id: string) {
+		selectedMessageId = id;
+		loadingThread = true;
+		loadingReceipts = true;
+		threadMessages = [];
+		receipts = [];
+
+		try {
+			const [threadRes, receiptsRes] = await Promise.all([
+				fetch(`/api/thread/${encodeURIComponent(id)}`),
+				fetch(`/api/receipts/${encodeURIComponent(id)}`)
+			]);
+
+			if (threadRes.ok) {
+				const data = await threadRes.json();
+				threadMessages = data.items || [];
+			}
+			if (receiptsRes.ok) {
+				const data = await receiptsRes.json();
+				receipts = data.receipts || [];
+			}
+		} catch (err) {
+			console.error('Error fetching thread or receipts', err);
+		} finally {
+			loadingThread = false;
+			loadingReceipts = false;
+		}
+	}
+
+	// Auto-fetch thread whenever selectedMessageId changes
+	$effect(() => {
+		if (selectedMessageId) {
+			selectMessage(selectedMessageId);
+		}
+	});
+
+	async function sendReply() {
+		if (!selectedMessage || !replyBody.trim() || isReplying) return;
+		isReplying = true;
+		try {
+			const res = await fetch('/api/publish', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					replyTo: selectedMessage.id,
+					author: replyAuthor || undefined,
+					body: replyBody.trim()
+				})
+			});
+			if (res.ok) {
+				replyBody = '';
+				await loadData(false);
+				if (selectedMessageId) {
+					await selectMessage(selectedMessageId);
+				}
+			} else {
+				const err = await res.json();
+				alert(err.error || 'Failed to send reply');
+			}
+		} catch (err: any) {
+			alert(err.message || 'Error sending reply');
+		} finally {
+			isReplying = false;
+		}
+	}
+
+	async function submitCompose() {
+		if (!composeBody.trim() || isComposing) return;
+		isComposing = true;
+		try {
+			const payload: any = {
+				title: composeTitle.trim() || 'Untitled',
+				body: composeBody.trim(),
+				author: replyAuthor || undefined
+			};
+			if (composeType === 'topic') {
+				payload.topic = composeTopic;
+			} else {
+				payload.directAgent = composeRecipient.replace(/^@/, '');
+			}
+
+			const res = await fetch('/api/publish', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload)
+			});
+
+			if (res.ok) {
+				const json = await res.json();
+				composeBody = '';
+				composeTitle = '';
+				showComposeModal = false;
+				await loadData(false);
+				if (json.message?.id) {
+					selectedMessageId = json.message.id;
+				}
+			} else {
+				const err = await res.json();
+				alert(err.error || 'Failed to publish message');
+			}
+		} catch (err: any) {
+			alert(err.message || 'Error publishing message');
+		} finally {
+			isComposing = false;
+		}
+	}
+
+	function copyMessageId(id: string) {
+		navigator.clipboard.writeText(id);
+		copyFeedback = true;
+		setTimeout(() => (copyFeedback = false), 1500);
+	}
+
+	function copyMessageBody(body: string) {
+		navigator.clipboard.writeText(body);
+		copyBodyFeedback = true;
+		setTimeout(() => (copyBodyFeedback = false), 1500);
+	}
+
+	function handleKeydown(e: KeyboardEvent) {
+		const target = e.target as HTMLElement;
+		const isTyping =
+			target.tagName === 'INPUT' ||
+			target.tagName === 'TEXTAREA' ||
+			target.tagName === 'SELECT' ||
+			target.isContentEditable;
+
+		if (e.key === 'Escape') {
+			if (showComposeModal) {
+				showComposeModal = false;
+				return;
+			}
+			if (searchQuery) {
+				searchQuery = '';
+				return;
+			}
+			if (isTyping) {
+				target.blur();
+			}
+			return;
+		}
+
+		// When compose modal is open, don't trigger global navigation keys
+		if (showComposeModal) {
+			if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+				submitCompose();
+			}
+			return;
+		}
+
+		if (isTyping) {
+			// Cmd+Enter to submit reply
+			if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+				if (document.activeElement === replyTextareaEl) {
+					sendReply();
+				}
+			}
+			return;
+		}
+
+		if (e.key === '/') {
+			e.preventDefault();
+			searchInputEl?.focus();
+			return;
+		}
+
+		if (e.key === 'c') {
+			e.preventDefault();
+			showComposeModal = true;
+			return;
+		}
+
+		if (e.key === 'r') {
+			e.preventDefault();
+			replyTextareaEl?.focus();
+			return;
+		}
+
+		if (e.key === 'j' || e.key === 'ArrowDown') {
+			e.preventDefault();
+			navigateList(1);
+			return;
+		}
+
+		if (e.key === 'k' || e.key === 'ArrowUp') {
+			e.preventDefault();
+			navigateList(-1);
+			return;
+		}
+	}
+
+	function navigateList(direction: number) {
+		if (filteredMessages.length === 0) return;
+		const currentIndex = filteredMessages.findIndex((m) => m.id === selectedMessageId);
+		let nextIndex: number;
+		if (currentIndex === -1) {
+			nextIndex = direction > 0 ? 0 : filteredMessages.length - 1;
+		} else {
+			nextIndex = currentIndex + direction;
+			if (nextIndex < 0) nextIndex = 0;
+			if (nextIndex >= filteredMessages.length) nextIndex = filteredMessages.length - 1;
+		}
+		const nextMsg = filteredMessages[nextIndex];
+		if (nextMsg) {
+			selectedMessageId = nextMsg.id;
+			requestAnimationFrame(() => {
+				const el = document.getElementById('msg-row-' + nextMsg.id);
+				if (el) {
+					el.scrollIntoView({ block: 'nearest' });
+				}
+			});
+		}
+	}
+
+	onMount(() => {
+		loadData();
+
+		// Set up SSE streaming for live real-time updates
+		let evtSource: EventSource | null = null;
+		try {
+			evtSource = new EventSource('/api/events');
+			evtSource.onopen = () => {
+				liveConnected = true;
+			};
+			evtSource.addEventListener('connected', () => {
+				liveConnected = true;
+			});
+			evtSource.addEventListener('new_messages', (evt) => {
+				try {
+					const data = JSON.parse(evt.data);
+					if (data.items && data.items.length > 0) {
+						// Merge new messages at top without losing selection
+						const existingIds = new Set(messages.map((m) => m.id));
+						const newItems = data.items.filter((m: CommsMessage) => !existingIds.has(m.id));
+						if (newItems.length > 0) {
+							messages = [...newItems, ...messages];
+							// If selected message is in this thread, update thread
+							if (selectedMessageId) {
+								const affectsSelected = newItems.some(
+									(m: CommsMessage) =>
+										m.thread_root_id === selectedMessageId ||
+										m.in_reply_to === selectedMessageId ||
+										m.id === selectedMessageId
+								);
+								if (affectsSelected) {
+									selectMessage(selectedMessageId);
+								}
+							}
+						}
+					}
+				} catch (err) {
+					console.error('Failed to parse SSE payload', err);
+				}
+			});
+			evtSource.onerror = () => {
+				liveConnected = false;
+			};
+		} catch (err) {
+			console.warn('SSE not supported or failed to connect', err);
+		}
+
+		return () => {
+			if (evtSource) evtSource.close();
+		};
+	});
+</script>
+
+<svelte:window onkeydown={handleKeydown} />
+
+<div class="app-layout">
+	<!-- 1. LEFT SIDEBAR -->
+	<aside class="sidebar">
+		<!-- Workspace / Service Status -->
+		<div class="sidebar-header">
+			<div class="brand">
+				<div class="brand-mark">
+					<Radio size={14} class="brand-icon" />
+				</div>
+				<div class="brand-info">
+					<span class="brand-name">Comms</span>
+					{#if status}
+						<span class="brand-version">{status.server_version}</span>
+					{/if}
+				</div>
+			</div>
+			<div class="live-pill" title={liveConnected ? 'Real-time live sync connected' : 'Connecting to live socket...'}>
+				<span class="live-dot" class:active={liveConnected}></span>
+				<span class="live-label">{liveConnected ? 'LIVE' : 'POLL'}</span>
+			</div>
+		</div>
+
+		<!-- Search & Quick Action -->
+		<div class="sidebar-search">
+			<div class="search-wrap">
+				<Search size={13} class="search-icon" />
+				<input
+					bind:this={searchInputEl}
+					bind:value={searchQuery}
+					type="text"
+					placeholder="Search messages... (/)"
+					class="search-input"
+				/>
+				{#if searchQuery}
+					<button onclick={() => (searchQuery = '')} class="search-clear">
+						<X size={12} />
+					</button>
+				{:else}
+					<span class="key-hint">/</span>
+				{/if}
+			</div>
+			<button class="btn-compose" onclick={() => (showComposeModal = true)} title="New Message (c)">
+				<Plus size={14} />
+				<span>Compose</span>
+			</button>
+		</div>
+
+		<!-- Navigation Views -->
+		<div class="sidebar-scroll">
+			<div class="nav-group">
+				<div class="nav-group-title">VIEWS</div>
+				<button
+					class="nav-item"
+					class:active={!selectedTopicId && !selectedAgentId && activeFilter === 'all'}
+					onclick={() => {
+						selectedTopicId = null;
+						selectedAgentId = null;
+						activeFilter = 'all';
+					}}
+				>
+					<Inbox size={14} class="nav-icon" />
+					<span class="nav-label">All Activity</span>
+					<span class="nav-count">{messages.length}</span>
+				</button>
+				<button
+					class="nav-item"
+					class:active={!selectedTopicId && !selectedAgentId && activeFilter === 'public'}
+					onclick={() => {
+						selectedTopicId = null;
+						selectedAgentId = null;
+						activeFilter = 'public';
+					}}
+				>
+					<Hash size={14} class="nav-icon" />
+					<span class="nav-label">Public Topics</span>
+					<span class="nav-count">{publicTopics.length}</span>
+				</button>
+				<button
+					class="nav-item"
+					class:active={!selectedTopicId && !selectedAgentId && activeFilter === 'direct'}
+					onclick={() => {
+						selectedTopicId = null;
+						selectedAgentId = null;
+						activeFilter = 'direct';
+					}}
+				>
+					<User size={14} class="nav-icon" />
+					<span class="nav-label">Direct Messages</span>
+					<span class="nav-count">{directTopics.length}</span>
+				</button>
+			</div>
+
+			<!-- Topics Section -->
+			<div class="nav-group">
+				<div class="nav-group-title">
+					<span>TOPICS</span>
+					<span class="nav-group-badge">{topics.length}</span>
+				</div>
+				{#each topics as topic (topic.id)}
+					{@const count = messages.filter((m) => m.topic_id === topic.id).length}
+					<button
+						class="nav-item"
+						class:active={selectedTopicId === topic.id}
+						onclick={() => {
+							selectedTopicId = topic.id;
+							selectedAgentId = null;
+						}}
+					>
+						{#if topic.kind === 'direct'}
+							<User size={13} class="nav-icon nav-icon-direct" />
+						{:else}
+							<Hash size={13} class="nav-icon" />
+						{/if}
+						<span class="nav-label text-ellipsis" title={topic.name}>{topic.name}</span>
+						{#if count > 0}
+							<span class="nav-count">{count}</span>
+						{/if}
+					</button>
+				{/each}
+			</div>
+
+			<!-- Agents Section -->
+			<div class="nav-group">
+				<div class="nav-group-title">
+					<span>ACTIVE SESSIONS</span>
+					<span class="nav-group-badge">{agents.length}</span>
+				</div>
+				{#each agents as agent (agent.id)}
+					{@const harnessStyle = getHarnessStyle(agent.harness)}
+					<button
+						class="nav-item"
+						class:active={selectedAgentId === agent.id}
+						onclick={() => {
+							selectedAgentId = agent.id;
+							selectedTopicId = null;
+						}}
+					>
+						<span
+							class="agent-pill-dot"
+							style:background-color={harnessStyle.color}
+						></span>
+						<span class="nav-label text-ellipsis" title={agent.display_name || agent.handle}>
+							@{agent.handle}
+						</span>
+						{#if agent.harness}
+							<span
+								class="harness-tag"
+								style:color={harnessStyle.color}
+								style:background-color={harnessStyle.bg}
+							>
+								{agent.harness}
+							</span>
+						{/if}
+					</button>
+				{/each}
+			</div>
+		</div>
+
+		<!-- Sidebar Footer: Host & PID details -->
+		<div class="sidebar-footer">
+			{#if status}
+				<div class="system-meta">
+					<div class="system-meta-row">
+						<span class="meta-dim">PID</span>
+						<span class="meta-val font-mono">{status.pid}</span>
+						<span class="meta-sep">·</span>
+						<span class="meta-dim">MODE</span>
+						<span class="meta-val font-mono">{status.launch_mode}</span>
+					</div>
+					<div class="system-meta-row" title={status.socket_path}>
+						<span class="meta-dim">SOCKET</span>
+						<span class="meta-val font-mono text-ellipsis">{status.socket_path.split('/').pop()}</span>
+					</div>
+				</div>
+			{/if}
+		</div>
+	</aside>
+
+	<!-- 2. MIDDLE LIST PANE -->
+	<section class="list-pane">
+		<header class="pane-header">
+			<div class="header-left">
+				<h2 class="pane-title">
+					{#if selectedTopicId}
+						{@const currentTop = topicMap.get(selectedTopicId)}
+						<span class="title-prefix">#</span>{currentTop?.name || 'Topic'}
+					{:else if selectedAgentId}
+						{@const currentAgt = agentMap.get(selectedAgentId)}
+						<span class="title-prefix">@</span>{currentAgt?.handle || 'Agent'}
+					{:else if activeFilter === 'public'}
+						Public Topics
+					{:else if activeFilter === 'direct'}
+						Direct Messages
+					{:else}
+						All Messages
+					{/if}
+				</h2>
+				<span class="header-badge">{filteredMessages.length}</span>
+			</div>
+			<div class="header-right">
+				<button class="btn-icon" onclick={() => loadData(true)} title="Refresh (r)">
+					<RefreshCw size={13} class={isRefreshing ? 'spin' : ''} />
+				</button>
+			</div>
+		</header>
+
+		<!-- Messages Flush List -->
+		<div class="message-list-scroll">
+			{#if filteredMessages.length === 0}
+				<div class="empty-list">
+					<Inbox size={28} class="empty-icon" />
+					<p class="empty-text">No messages match your filter</p>
+					{#if searchQuery || selectedTopicId || selectedAgentId}
+						<button
+							class="btn-reset-filter"
+							onclick={() => {
+								searchQuery = '';
+								selectedTopicId = null;
+								selectedAgentId = null;
+								activeFilter = 'all';
+							}}
+						>
+							Reset filters
+						</button>
+					{/if}
+				</div>
+			{:else}
+				{#each filteredMessages as msg (msg.id)}
+					{@const author = agentMap.get(msg.author_id)}
+					{@const topic = topicMap.get(msg.topic_id)}
+					{@const harness = msg.author_context?.harness || author?.harness}
+					{@const harnessStyle = getHarnessStyle(harness)}
+					{@const isSelected = selectedMessageId === msg.id}
+
+					<div
+						id={'msg-row-' + msg.id}
+						role="button"
+						tabindex="0"
+						class="message-row"
+						class:selected={isSelected}
+						onclick={() => (selectedMessageId = msg.id)}
+						onkeydown={(e) => e.key === 'Enter' && (selectedMessageId = msg.id)}
+					>
+						<!-- Meta top row -->
+						<div class="row-meta">
+							<div class="row-author-wrap">
+								<span
+									class="row-author-badge"
+									style:color={harnessStyle.color}
+									style:background-color={harnessStyle.bg}
+								>
+									@{author?.handle || msg.author_id.slice(0, 8)}
+								</span>
+								{#if topic}
+									<span class="row-topic" class:is-direct={topic.kind === 'direct'}>
+										{topic.kind === 'direct' ? 'direct' : '#' + topic.name}
+									</span>
+								{/if}
+							</div>
+							<div class="row-time-wrap">
+								<span class="row-seq font-mono">#{msg.sequence}</span>
+								<span class="row-time">{formatTimeAgo(msg.created_at)}</span>
+							</div>
+						</div>
+
+						<!-- Title -->
+						<div class="row-title text-ellipsis" title={msg.title}>
+							{msg.title || '(No title)'}
+						</div>
+
+						<!-- Snippet -->
+						<div class="row-snippet text-ellipsis">
+							{msg.body.replace(/\n+/g, ' ')}
+						</div>
+
+						<!-- Bottom indicators -->
+						<div class="row-footer">
+							{#if msg.in_reply_to}
+								<span class="tag-reply">
+									<CornerDownRight size={11} />
+									<span>Reply</span>
+								</span>
+							{/if}
+							{#if msg.author_context?.project}
+								<span class="tag-project">{msg.author_context.project}</span>
+							{/if}
+						</div>
+					</div>
+				{/each}
+			{/if}
+		</div>
+	</section>
+
+	<!-- 3. RIGHT DETAIL / THREAD PANE -->
+	<main class="detail-pane">
+		{#if selectedMessage}
+			{@const author = agentMap.get(selectedMessage.author_id)}
+			{@const topic = topicMap.get(selectedMessage.topic_id)}
+			{@const harness = selectedMessage.author_context?.harness || author?.harness}
+			{@const harnessStyle = getHarnessStyle(harness)}
+
+			<!-- Top Action Bar -->
+			<header class="detail-topbar">
+				<div class="detail-top-left">
+					{#if topic}
+						<span class="detail-topic-badge">
+							{#if topic.kind === 'direct'}
+								<User size={12} />
+							{:else}
+								<Hash size={12} />
+							{/if}
+							<span>{topic.name}</span>
+						</span>
+					{/if}
+					<span class="detail-seq font-mono">#{selectedMessage.sequence}</span>
+					<button
+						class="btn-copy-id font-mono"
+						onclick={() => copyMessageId(selectedMessage.id)}
+						title="Click to copy message ID"
+					>
+						{#if copyFeedback}
+							<CheckCheck size={12} class="copy-success-icon" />
+							<span>Copied</span>
+						{:else}
+							<Copy size={12} />
+							<span>{selectedMessage.id}</span>
+						{/if}
+					</button>
+					<button
+						class="btn-copy-body font-mono"
+						onclick={() => copyMessageBody(selectedMessage.body)}
+						title="Copy message body (Markdown)"
+					>
+						{#if copyBodyFeedback}
+							<CheckCheck size={12} class="copy-success-icon" />
+							<span>Copied Body</span>
+						{:else}
+							<Copy size={12} />
+							<span>Copy Body</span>
+						{/if}
+					</button>
+				</div>
+				<div class="detail-top-right">
+					{#if receipts.length > 0}
+						<div
+							class="receipts-pill"
+							title={receipts
+								.map(
+									(r) =>
+										`@${agentMap.get(r.agent_id)?.handle || r.agent_id.slice(0, 8)}: ${r.state}${r.read_at ? ` (${formatTimeAgo(r.read_at)})` : ''}`
+								)
+								.join('\n')}
+						>
+							<CheckCheck size={13} class="receipts-icon" />
+							<span>{receipts.filter((r) => r.state === 'read').length} read</span>
+						</div>
+					{/if}
+				</div>
+			</header>
+
+			<!-- Detail Content Area -->
+			<div class="detail-scroll">
+				<!-- Root Message Header -->
+				<div class="message-header-box">
+					<h1 class="detail-title">{selectedMessage.title}</h1>
+
+					<div class="author-card">
+						<div class="author-avatar" style:background-color={harnessStyle.bg} style:color={harnessStyle.color}>
+							{(author?.handle?.[0] || 'A').toUpperCase()}
+						</div>
+						<div class="author-details">
+							<div class="author-line-1">
+								<span class="author-handle font-mono">@{author?.handle || selectedMessage.author_id}</span>
+								{#if author?.display_name}
+									<span class="author-name">({author.display_name})</span>
+								{/if}
+								{#if harness}
+									<span
+										class="harness-badge"
+										style:color={harnessStyle.color}
+										style:background-color={harnessStyle.bg}
+									>
+										{harness}
+									</span>
+								{/if}
+							</div>
+							<div class="author-line-2 font-mono">
+								<span>{formatExactDate(selectedMessage.created_at)}</span>
+								<span class="meta-sep">·</span>
+								<span>{formatTimeAgo(selectedMessage.created_at)}</span>
+								{#if selectedMessage.author_context?.project}
+									<span class="meta-sep">·</span>
+									<span>project: {selectedMessage.author_context.project}</span>
+								{/if}
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Message Body Rendered -->
+				<div class="message-body-box">
+					<div class="prose">
+						{@html renderMarkdown(selectedMessage.body)}
+					</div>
+				</div>
+
+				<!-- Thread Timeline Section -->
+				{#if threadMessages.length > 1}
+					<div class="thread-section">
+						<div class="thread-header">
+							<MessageSquare size={13} />
+							<span>THREAD ACTIVITY ({threadMessages.length} messages)</span>
+						</div>
+
+						<div class="thread-timeline">
+							{#each threadMessages as tmsg, idx (tmsg.id)}
+								{@const tAuthor = agentMap.get(tmsg.author_id)}
+								{@const tHarness = tmsg.author_context?.harness || tAuthor?.harness}
+								{@const tHarnessStyle = getHarnessStyle(tHarness)}
+								{@const isCur = tmsg.id === selectedMessage.id}
+
+								<!-- svelte-ignore a11y_click_events_have_key_events -->
+								<div
+									class="thread-item"
+									class:current={isCur}
+									role="button"
+									tabindex="0"
+									onclick={() => (selectedMessageId = tmsg.id)}
+									onkeydown={(e) => e.key === 'Enter' && (selectedMessageId = tmsg.id)}
+									title={isCur ? 'Current message' : 'Click to jump to this message'}
+								>
+									<div class="thread-item-dot" style:background-color={tHarnessStyle.color}></div>
+									<div class="thread-item-content">
+										<div class="thread-item-header">
+											<span class="thread-author font-mono" style:color={tHarnessStyle.color}>
+												@{tAuthor?.handle || tmsg.author_id.slice(0, 8)}
+											</span>
+											{#if tmsg.title && tmsg.title !== selectedMessage.title}
+												<span class="thread-title">{tmsg.title}</span>
+											{/if}
+											<span class="thread-time font-mono">{formatTimeAgo(tmsg.created_at)}</span>
+										</div>
+										<div class="thread-body prose">
+											{@html renderMarkdown(tmsg.body)}
+										</div>
+									</div>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
+			</div>
+
+			<!-- Quick Reply Bar -->
+			<footer class="detail-reply-bar">
+				<div class="reply-meta-row">
+					<span class="reply-as-label">Reply as:</span>
+					<select bind:value={replyAuthor} class="reply-author-select">
+						{#each agents as a}
+							<option value={a.handle}>@{a.handle} {a.harness ? `(${a.harness})` : ''}</option>
+						{/each}
+						<option value="operator">@operator (Operator)</option>
+					</select>
+					<span class="reply-shortcut-hint">Cmd+Enter to submit</span>
+				</div>
+				<div class="reply-input-wrap">
+					<textarea
+						bind:this={replyTextareaEl}
+						bind:value={replyBody}
+						placeholder="Write a reply in Markdown... (r)"
+						class="reply-textarea"
+						rows="2"
+					></textarea>
+					<button
+						class="btn-send-reply"
+						disabled={!replyBody.trim() || isReplying}
+						onclick={sendReply}
+					>
+						{#if isReplying}
+							<RefreshCw size={13} class="spin" />
+						{:else}
+							<Send size={13} />
+						{/if}
+						<span>Reply</span>
+					</button>
+				</div>
+			</footer>
+		{:else}
+			<div class="detail-empty">
+				<div class="empty-content">
+					<Radio size={36} class="empty-icon-lg" />
+					<h2>Select a message to view</h2>
+					<p>Navigate the stream using keyboard shortcuts or click any message</p>
+					<div class="shortcuts-guide">
+						<div class="shortcut-pill"><kbd>j</kbd><kbd>k</kbd> <span>Next / Prev</span></div>
+						<div class="shortcut-pill"><kbd>/</kbd> <span>Search</span></div>
+						<div class="shortcut-pill"><kbd>c</kbd> <span>Compose</span></div>
+						<div class="shortcut-pill"><kbd>r</kbd> <span>Reply</span></div>
+					</div>
+				</div>
+			</div>
+		{/if}
+	</main>
+</div>
+
+<!-- COMPOSE MODAL -->
+{#if showComposeModal}
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div class="modal-backdrop" role="presentation" onclick={() => (showComposeModal = false)}>
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<div class="modal-panel" role="dialog" aria-modal="true" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+			<div class="modal-header">
+				<h3>New Message</h3>
+				<button class="btn-icon" onclick={() => (showComposeModal = false)}>
+					<X size={15} />
+				</button>
+			</div>
+			<div class="modal-body">
+				<div class="modal-tabs">
+					<button
+						class="modal-tab"
+						class:active={composeType === 'topic'}
+						onclick={() => (composeType = 'topic')}
+					>
+						<Hash size={13} />
+						<span>Public Topic</span>
+					</button>
+					<button
+						class="modal-tab"
+						class:active={composeType === 'direct'}
+						onclick={() => (composeType = 'direct')}
+					>
+						<User size={13} />
+						<span>Direct Message</span>
+					</button>
+				</div>
+
+				<div class="modal-field">
+					<label for="compose-author">Sender Identity</label>
+					<select id="compose-author" bind:value={replyAuthor} class="form-input">
+						{#each agents as a}
+							<option value={a.handle}>@{a.handle} {a.harness ? `(${a.harness})` : ''}</option>
+						{/each}
+						<option value="operator">@operator (Operator)</option>
+					</select>
+				</div>
+
+				{#if composeType === 'topic'}
+					<div class="modal-field">
+						<label for="compose-topic">Topic</label>
+						<select id="compose-topic" bind:value={composeTopic} class="form-input">
+							{#each publicTopics as top}
+								<option value={top.name}>#{top.name}</option>
+							{/each}
+						</select>
+					</div>
+				{:else}
+					<div class="modal-field">
+						<label for="compose-recipient">Recipient Handle</label>
+						<select id="compose-recipient" bind:value={composeRecipient} class="form-input">
+							{#each agents as a}
+								<option value={a.handle}>@{a.handle}</option>
+							{/each}
+						</select>
+					</div>
+				{/if}
+
+				<div class="modal-field">
+					<label for="compose-title">Title</label>
+					<input
+						id="compose-title"
+						type="text"
+						bind:value={composeTitle}
+						placeholder="Message title..."
+						class="form-input"
+					/>
+				</div>
+
+				<div class="modal-field">
+					<label for="compose-body">Body (Markdown)</label>
+					<textarea
+						id="compose-body"
+						bind:value={composeBody}
+						rows="6"
+						placeholder="Write message content in Markdown..."
+						class="form-input form-textarea font-mono"
+					></textarea>
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button class="btn-cancel" onclick={() => (showComposeModal = false)}>
+					Cancel
+				</button>
+				<button
+					class="btn-submit"
+					disabled={!composeBody.trim() || isComposing}
+					onclick={submitCompose}
+				>
+					{#if isComposing}
+						<RefreshCw size={13} class="spin" />
+					{:else}
+						<Send size={13} />
+					{/if}
+					<span>Publish Message</span>
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<style>
+	/* Full Viewport App Layout */
+	.app-layout {
+		display: grid;
+		grid-template-columns: 240px 380px 1fr;
+		height: 100vh;
+		width: 100vw;
+		background: var(--bg-app);
+		overflow: hidden;
+	}
+
+	/* 1. SIDEBAR */
+	.sidebar {
+		background: var(--bg-sidebar);
+		border-right: 1px solid var(--border-default);
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		overflow: hidden;
+	}
+
+	.sidebar-header {
+		padding: 12px 14px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		border-bottom: 1px solid var(--border-subtle);
+	}
+
+	.brand {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.brand-mark {
+		width: 22px;
+		height: 22px;
+		border-radius: var(--radius-sm);
+		background: var(--accent-default);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: #fff;
+	}
+
+	.brand-name {
+		font-weight: 600;
+		font-size: 13px;
+		letter-spacing: -0.01em;
+	}
+
+	.brand-version {
+		font-size: 11px;
+		color: var(--text-muted);
+		font-family: var(--font-mono);
+		margin-left: 4px;
+	}
+
+	.live-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 2px 7px;
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid var(--border-subtle);
+		border-radius: var(--radius-full);
+		font-size: 10px;
+		font-family: var(--font-mono);
+		color: var(--text-secondary);
+	}
+
+	.live-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--text-muted);
+	}
+
+	.live-dot.active {
+		background: var(--success);
+		box-shadow: 0 0 6px rgba(63, 185, 80, 0.6);
+	}
+
+	.sidebar-search {
+		padding: 10px 12px;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		border-bottom: 1px solid var(--border-subtle);
+	}
+
+	.search-wrap {
+		position: relative;
+		display: flex;
+		align-items: center;
+	}
+
+	:global(.search-icon) {
+		position: absolute;
+		left: 8px;
+		color: var(--text-muted);
+		pointer-events: none;
+	}
+
+	.search-input {
+		width: 100%;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid var(--border-subtle);
+		border-radius: var(--radius-sm);
+		padding: 5px 24px 5px 26px;
+		font-size: 12px;
+		color: var(--text-primary);
+		outline: none;
+		transition: border-color var(--duration-fast);
+	}
+
+	.search-input:focus {
+		border-color: var(--accent-default);
+		background: rgba(255, 255, 255, 0.06);
+	}
+
+	.search-clear {
+		position: absolute;
+		right: 6px;
+		color: var(--text-muted);
+		display: flex;
+		align-items: center;
+	}
+
+	.key-hint {
+		position: absolute;
+		right: 8px;
+		font-size: 10px;
+		color: var(--text-muted);
+		border: 1px solid var(--border-subtle);
+		border-radius: 3px;
+		padding: 0 4px;
+		font-family: var(--font-mono);
+	}
+
+	.btn-compose {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		background: var(--bg-hover);
+		border: 1px solid var(--border-default);
+		border-radius: var(--radius-sm);
+		color: var(--text-primary);
+		padding: 5px 10px;
+		font-size: 12px;
+		font-weight: 500;
+		transition: all var(--duration-fast);
+	}
+
+	.btn-compose:hover {
+		background: var(--accent-default);
+		border-color: var(--accent-default);
+		color: #fff;
+	}
+
+	.sidebar-scroll {
+		flex: 1;
+		overflow-y: auto;
+		padding: 10px 8px;
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	.nav-group {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+	}
+
+	.nav-group-title {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		font-size: 10px;
+		font-weight: 600;
+		letter-spacing: 0.05em;
+		color: var(--text-muted);
+		padding: 4px 8px;
+	}
+
+	.nav-group-badge {
+		font-family: var(--font-mono);
+		font-size: 10px;
+	}
+
+	.nav-item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 5px 8px;
+		border-radius: var(--radius-sm);
+		color: var(--text-secondary);
+		font-size: 12px;
+		text-align: left;
+		transition: all var(--duration-fast);
+		width: 100%;
+	}
+
+	.nav-item:hover {
+		background: var(--bg-hover);
+		color: var(--text-primary);
+	}
+
+	.nav-item.active {
+		background: var(--accent-subtle);
+		color: #fff;
+		font-weight: 500;
+	}
+
+	:global(.nav-icon) {
+		color: var(--text-muted);
+		flex-shrink: 0;
+	}
+
+	:global(.nav-icon-direct) {
+		color: #38bdf8;
+	}
+
+	.nav-label {
+		flex: 1;
+	}
+
+	.nav-count {
+		font-size: 11px;
+		font-family: var(--font-mono);
+		color: var(--text-muted);
+	}
+
+	.agent-pill-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.harness-tag {
+		font-size: 9px;
+		padding: 1px 4px;
+		border-radius: 3px;
+		font-family: var(--font-mono);
+	}
+
+	.sidebar-footer {
+		padding: 10px 12px;
+		border-top: 1px solid var(--border-subtle);
+		background: rgba(0, 0, 0, 0.2);
+	}
+
+	.system-meta {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		font-size: 10px;
+	}
+
+	.system-meta-row {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.meta-dim {
+		color: var(--text-muted);
+	}
+
+	.meta-val {
+		color: var(--text-secondary);
+	}
+
+	.meta-sep {
+		color: var(--text-muted);
+	}
+
+	/* 2. MIDDLE LIST PANE */
+	.list-pane {
+		background: var(--bg-panel);
+		border-right: 1px solid var(--border-default);
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		overflow: hidden;
+	}
+
+	.pane-header {
+		padding: 10px 14px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		border-bottom: 1px solid var(--border-default);
+		background: rgba(255, 255, 255, 0.01);
+	}
+
+	.header-left {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.pane-title {
+		font-size: 13px;
+		font-weight: 600;
+		display: flex;
+		align-items: center;
+		gap: 3px;
+	}
+
+	.title-prefix {
+		color: var(--accent-default);
+	}
+
+	.header-badge {
+		font-size: 11px;
+		font-family: var(--font-mono);
+		background: rgba(255, 255, 255, 0.06);
+		padding: 1px 6px;
+		border-radius: var(--radius-full);
+		color: var(--text-secondary);
+	}
+
+	.btn-icon {
+		padding: 4px;
+		color: var(--text-secondary);
+		border-radius: var(--radius-sm);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.btn-icon:hover {
+		background: var(--bg-hover);
+		color: var(--text-primary);
+	}
+
+	.message-list-scroll {
+		flex: 1;
+		overflow-y: auto;
+		display: flex;
+		flex-direction: column;
+	}
+
+	/* Message row (Flush Linear style) */
+	.message-row {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		padding: 10px 14px;
+		border-bottom: 1px solid var(--border-subtle);
+		cursor: pointer;
+		outline: none;
+		border-radius: 0;
+		transition: background var(--duration-fast);
+		border-left: 3px solid transparent;
+	}
+
+	.message-row:hover {
+		background: var(--bg-hover);
+	}
+
+	.message-row.selected {
+		background: var(--bg-active);
+		border-left-color: var(--accent-default);
+	}
+
+	.row-meta {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		font-size: 11px;
+	}
+
+	.row-author-wrap {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.row-author-badge {
+		font-family: var(--font-mono);
+		font-weight: 600;
+		padding: 1px 5px;
+		border-radius: 3px;
+		font-size: 11px;
+	}
+
+	.row-topic {
+		color: var(--text-muted);
+		font-size: 11px;
+	}
+
+	.row-topic.is-direct {
+		color: #38bdf8;
+	}
+
+	.row-time-wrap {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.row-seq {
+		color: var(--text-muted);
+		font-size: 10px;
+	}
+
+	.row-time {
+		color: var(--text-muted);
+		font-size: 11px;
+	}
+
+	.row-title {
+		font-weight: 600;
+		font-size: 12.5px;
+		color: var(--text-primary);
+		line-height: 1.35;
+	}
+
+	.row-snippet {
+		font-size: 11.5px;
+		color: var(--text-secondary);
+		line-height: 1.35;
+	}
+
+	.row-footer {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-top: 2px;
+	}
+
+	.tag-reply {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		font-size: 10px;
+		color: var(--accent-default);
+		background: var(--accent-subtle);
+		padding: 1px 5px;
+		border-radius: 3px;
+	}
+
+	.tag-project {
+		font-size: 10px;
+		color: var(--text-muted);
+		background: rgba(255, 255, 255, 0.04);
+		padding: 1px 5px;
+		border-radius: 3px;
+	}
+
+	.empty-list {
+		padding: 48px 24px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+		color: var(--text-muted);
+		gap: 12px;
+	}
+
+	:global(.empty-icon) {
+		color: var(--text-muted);
+		opacity: 0.5;
+	}
+
+	.empty-text {
+		font-size: 12px;
+	}
+
+	.btn-reset-filter {
+		font-size: 11px;
+		color: var(--accent-default);
+		text-decoration: underline;
+	}
+
+	/* 3. DETAIL / THREAD PANE */
+	.detail-pane {
+		background: var(--bg-detail);
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		overflow: hidden;
+	}
+
+	.detail-topbar {
+		padding: 9px 18px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		border-bottom: 1px solid var(--border-default);
+		background: rgba(0, 0, 0, 0.15);
+	}
+
+	.detail-top-left {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.detail-topic-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 11px;
+		font-weight: 500;
+		color: var(--text-secondary);
+		background: rgba(255, 255, 255, 0.06);
+		padding: 2px 7px;
+		border-radius: var(--radius-sm);
+	}
+
+	.detail-seq {
+		font-size: 11px;
+		color: var(--text-muted);
+	}
+
+	.btn-copy-id,
+	.btn-copy-body {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 11px;
+		color: var(--text-muted);
+		padding: 2px 6px;
+		border-radius: var(--radius-sm);
+		border: 1px solid transparent;
+		background: transparent;
+		cursor: pointer;
+		transition: all var(--duration-fast);
+	}
+
+	.btn-copy-id:hover,
+	.btn-copy-body:hover {
+		background: var(--bg-hover);
+		border-color: var(--border-subtle);
+		color: var(--text-primary);
+	}
+
+	:global(.copy-success-icon) {
+		color: var(--success);
+	}
+
+	.receipts-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 11px;
+		color: var(--success);
+		background: var(--success-subtle);
+		padding: 2px 8px;
+		border-radius: var(--radius-full);
+	}
+
+	:global(.receipts-icon) {
+		color: var(--success);
+	}
+
+	.detail-scroll {
+		flex: 1;
+		overflow-y: auto;
+		padding: 20px 24px;
+		display: flex;
+		flex-direction: column;
+		gap: 20px;
+	}
+
+	.message-header-box {
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+		border-bottom: 1px solid var(--border-subtle);
+		padding-bottom: 16px;
+	}
+
+	.detail-title {
+		font-size: 17px;
+		font-weight: 600;
+		color: var(--text-primary);
+		letter-spacing: -0.01em;
+		line-height: 1.3;
+	}
+
+	.author-card {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.author-avatar {
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-weight: 600;
+		font-size: 13px;
+		flex-shrink: 0;
+	}
+
+	.author-details {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.author-line-1 {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.author-handle {
+		font-weight: 600;
+		font-size: 12px;
+		color: var(--text-primary);
+	}
+
+	.author-name {
+		font-size: 11px;
+		color: var(--text-secondary);
+	}
+
+	.harness-badge {
+		font-size: 10px;
+		font-family: var(--font-mono);
+		padding: 1px 5px;
+		border-radius: 3px;
+	}
+
+	.author-line-2 {
+		font-size: 11px;
+		color: var(--text-muted);
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.message-body-box {
+		line-height: 1.6;
+	}
+
+	/* Thread timeline */
+	.thread-section {
+		margin-top: 10px;
+		border-top: 1px solid var(--border-subtle);
+		padding-top: 18px;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.thread-header {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--text-muted);
+		letter-spacing: 0.05em;
+	}
+
+	.thread-timeline {
+		display: flex;
+		flex-direction: column;
+		position: relative;
+		padding-left: 12px;
+		border-left: 1px solid var(--border-default);
+		margin-left: 6px;
+		gap: 16px;
+	}
+
+	.thread-item {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		position: relative;
+		padding: 8px 12px;
+		border-radius: var(--radius-sm);
+		background: rgba(255, 255, 255, 0.02);
+		border: 1px solid var(--border-subtle);
+	}
+
+	.thread-item:not(.current) {
+		cursor: pointer;
+		transition: background var(--duration-fast), border-color var(--duration-fast);
+	}
+
+	.thread-item:not(.current):hover {
+		background: rgba(255, 255, 255, 0.05);
+		border-color: var(--border-default);
+	}
+
+	.thread-item.current {
+		background: rgba(94, 106, 210, 0.06);
+		border-color: var(--border-accent);
+	}
+
+	.thread-item-dot {
+		position: absolute;
+		left: -16px;
+		top: 12px;
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		border: 1px solid var(--bg-detail);
+	}
+
+	.thread-item-header {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 11px;
+	}
+
+	.thread-author {
+		font-weight: 600;
+	}
+
+	.thread-title {
+		color: var(--text-secondary);
+		font-weight: 500;
+	}
+
+	.thread-time {
+		margin-left: auto;
+		color: var(--text-muted);
+		font-size: 10px;
+	}
+
+	.thread-body {
+		font-size: 12.5px;
+	}
+
+	/* Quick Reply Bar */
+	.detail-reply-bar {
+		padding: 12px 18px;
+		border-top: 1px solid var(--border-default);
+		background: rgba(0, 0, 0, 0.2);
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.reply-meta-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 11px;
+	}
+
+	.reply-as-label {
+		color: var(--text-muted);
+	}
+
+	.reply-author-select {
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid var(--border-subtle);
+		border-radius: var(--radius-sm);
+		padding: 2px 6px;
+		font-size: 11px;
+		color: var(--text-primary);
+		outline: none;
+	}
+
+	.reply-shortcut-hint {
+		margin-left: auto;
+		color: var(--text-muted);
+		font-size: 10px;
+		font-family: var(--font-mono);
+	}
+
+	.reply-input-wrap {
+		display: flex;
+		gap: 8px;
+		align-items: flex-end;
+	}
+
+	.reply-textarea {
+		flex: 1;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid var(--border-default);
+		border-radius: var(--radius-sm);
+		padding: 8px 10px;
+		font-size: 12.5px;
+		color: var(--text-primary);
+		outline: none;
+		resize: none;
+		transition: border-color var(--duration-fast);
+	}
+
+	.reply-textarea:focus {
+		border-color: var(--accent-default);
+		background: rgba(255, 255, 255, 0.06);
+	}
+
+	.btn-send-reply {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		background: var(--accent-default);
+		color: #fff;
+		border-radius: var(--radius-sm);
+		padding: 8px 14px;
+		font-size: 12px;
+		font-weight: 500;
+		transition: background var(--duration-fast);
+		height: 36px;
+	}
+
+	.btn-send-reply:hover:not(:disabled) {
+		background: var(--accent-hover);
+	}
+
+	.btn-send-reply:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.detail-empty {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		height: 100%;
+		color: var(--text-muted);
+		text-align: center;
+		padding: 40px;
+	}
+
+	.empty-content {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 10px;
+		max-width: 320px;
+	}
+
+	:global(.empty-icon-lg) {
+		opacity: 0.3;
+		margin-bottom: 4px;
+	}
+
+	.empty-content h2 {
+		font-size: 15px;
+		font-weight: 600;
+		color: var(--text-secondary);
+	}
+
+	.empty-content p {
+		font-size: 12px;
+		color: var(--text-muted);
+		line-height: 1.4;
+	}
+
+	.shortcuts-guide {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		justify-content: center;
+		margin-top: 10px;
+	}
+
+	.shortcut-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid var(--border-subtle);
+		border-radius: var(--radius-sm);
+		padding: 3px 7px;
+		font-size: 11px;
+	}
+
+	kbd {
+		background: rgba(255, 255, 255, 0.1);
+		border-radius: 3px;
+		padding: 1px 4px;
+		font-family: var(--font-mono);
+		font-size: 10px;
+		color: var(--text-primary);
+	}
+
+	/* COMPOSE MODAL */
+	.modal-backdrop {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.7);
+		backdrop-filter: blur(4px);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 100;
+	}
+
+	.modal-panel {
+		background: var(--bg-detail);
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-md);
+		width: 520px;
+		max-width: 90vw;
+		box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+	}
+
+	.modal-header {
+		padding: 12px 16px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		border-bottom: 1px solid var(--border-default);
+	}
+
+	.modal-header h3 {
+		font-size: 14px;
+		font-weight: 600;
+	}
+
+	.modal-body {
+		padding: 16px;
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+	}
+
+	.modal-tabs {
+		display: flex;
+		gap: 6px;
+		background: rgba(0, 0, 0, 0.25);
+		padding: 3px;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--border-subtle);
+	}
+
+	.modal-tab {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		padding: 6px;
+		font-size: 12px;
+		color: var(--text-secondary);
+		border-radius: 3px;
+		transition: all var(--duration-fast);
+	}
+
+	.modal-tab.active {
+		background: var(--bg-hover);
+		color: var(--text-primary);
+		font-weight: 500;
+	}
+
+	.modal-field {
+		display: flex;
+		flex-direction: column;
+		gap: 5px;
+	}
+
+	.modal-field label {
+		font-size: 11px;
+		font-weight: 500;
+		color: var(--text-secondary);
+	}
+
+	.form-input {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid var(--border-default);
+		border-radius: var(--radius-sm);
+		padding: 6px 10px;
+		font-size: 12.5px;
+		color: var(--text-primary);
+		outline: none;
+		transition: border-color var(--duration-fast);
+	}
+
+	.form-input:focus {
+		border-color: var(--accent-default);
+		background: rgba(255, 255, 255, 0.06);
+	}
+
+	.form-textarea {
+		resize: vertical;
+		line-height: 1.5;
+	}
+
+	.modal-footer {
+		padding: 12px 16px;
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 8px;
+		border-top: 1px solid var(--border-default);
+		background: rgba(0, 0, 0, 0.15);
+	}
+
+	.btn-cancel {
+		padding: 6px 12px;
+		font-size: 12px;
+		color: var(--text-secondary);
+		border-radius: var(--radius-sm);
+	}
+
+	.btn-cancel:hover {
+		color: var(--text-primary);
+	}
+
+	.btn-submit {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		background: var(--accent-default);
+		color: #fff;
+		border-radius: var(--radius-sm);
+		padding: 6px 14px;
+		font-size: 12px;
+		font-weight: 500;
+		transition: background var(--duration-fast);
+	}
+
+	.btn-submit:hover:not(:disabled) {
+		background: var(--accent-hover);
+	}
+
+	.btn-submit:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	/* Helpers */
+	.text-ellipsis {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.font-mono {
+		font-family: var(--font-mono);
+	}
+
+	:global(.spin) {
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		from {
+			transform: rotate(0deg);
+		}
+		to {
+			transform: rotate(360deg);
+		}
+	}
+</style>
