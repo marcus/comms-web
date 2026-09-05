@@ -543,7 +543,6 @@
 			</div>
 			<div class="live-pill" title={liveConnected ? 'Real-time live sync connected' : 'Connecting to live socket...'}>
 				<span class="live-dot" class:active={liveConnected}></span>
-				<span class="live-label">{liveConnected ? 'LIVE' : 'POLL'}</span>
 			</div>
 		</div>
 
@@ -688,15 +687,8 @@
 			{#if status}
 				<div class="system-meta">
 					<div class="system-meta-row">
-						<span class="meta-dim">PID</span>
-						<span class="meta-val font-mono">{status.pid}</span>
-						<span class="meta-sep">·</span>
 						<span class="meta-dim">MODE</span>
 						<span class="meta-val font-mono">{status.launch_mode}</span>
-					</div>
-					<div class="system-meta-row" title={status.socket_path}>
-						<span class="meta-dim">SOCKET</span>
-						<span class="meta-val font-mono text-ellipsis">{status.socket_path.split('/').pop()}</span>
 					</div>
 				</div>
 			{/if}
@@ -887,22 +879,6 @@
 							<span>Copy Body</span>
 						{/if}
 					</button>
-				</div>
-				<div class="detail-top-right">
-					{#if receipts.length > 0}
-						<div
-							class="receipts-pill"
-							title={receipts
-								.map(
-									(r) =>
-										`@${r.agent?.handle || r.agent?.id?.slice(0, 8) || 'agent'}: ${r.state}${r.read_at ? ` (${formatTimeAgo(r.read_at, now)})` : ''}`
-								)
-								.join('\n')}
-						>
-							<CheckCheck size={13} class="receipts-icon" />
-							<span>{receipts.filter((r) => r.state === 'read').length} read</span>
-						</div>
-					{/if}
 				</div>
 			</header>
 
@@ -1200,6 +1176,7 @@
 	}
 
 	.sidebar-header {
+		min-height: 48px;
 		padding: 12px var(--pad-chrome);
 		display: flex;
 		align-items: center;
@@ -1240,26 +1217,33 @@
 	.live-pill {
 		display: inline-flex;
 		align-items: center;
-		gap: 5px;
-		padding: 2px 7px;
-		background: rgba(255, 255, 255, 0.05);
-		border: 1px solid var(--border-subtle);
-		border-radius: var(--radius-full);
-		font-size: 10px;
-		font-family: var(--font-mono);
-		color: var(--text-secondary);
+		justify-content: center;
+		width: 22px;
+		height: 22px;
 	}
 
 	.live-dot {
-		width: 6px;
-		height: 6px;
+		width: 8px;
+		height: 8px;
 		border-radius: 50%;
-		background: var(--text-muted);
+		background: var(--text-subtle);
 	}
 
 	.live-dot.active {
 		background: var(--success);
-		box-shadow: 0 0 6px rgba(91, 143, 99, 0.6);
+		animation: live-breathe 3.2s ease-in-out infinite;
+	}
+
+	@keyframes live-breathe {
+		0%,
+		100% {
+			box-shadow: 0 0 3px rgba(91, 143, 99, 0.35);
+			opacity: 0.85;
+		}
+		50% {
+			box-shadow: 0 0 10px rgba(91, 143, 99, 0.8);
+			opacity: 1;
+		}
 	}
 
 	.sidebar-search {
@@ -1459,10 +1443,6 @@
 		color: var(--text-secondary);
 	}
 
-	.meta-sep {
-		color: var(--text-muted);
-	}
-
 	/* 2. MIDDLE LIST PANE */
 	.list-pane {
 		background: var(--bg-panel);
@@ -1474,6 +1454,7 @@
 	}
 
 	.pane-header {
+		min-height: 48px;
 		padding: 10px var(--pad-chrome);
 		display: flex;
 		align-items: center;
@@ -1503,11 +1484,7 @@
 	.header-badge {
 		font-size: 11px;
 		font-family: var(--font-mono);
-		background: var(--bg-elevated);
-		border: 1px solid var(--border-default);
-		padding: 1px 6px;
-		border-radius: var(--radius-full);
-		color: var(--accent-secondary);
+		color: var(--text-muted);
 	}
 
 	.btn-icon {
@@ -1716,6 +1693,7 @@
 	}
 
 	.detail-topbar {
+		min-height: 48px;
 		padding: 10px var(--pad-detail);
 		display: flex;
 		align-items: center;
@@ -1775,21 +1753,6 @@
 	}
 
 	:global(.copy-success-icon) {
-		color: var(--success);
-	}
-
-	.receipts-pill {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		font-size: 11px;
-		color: var(--success);
-		background: var(--success-subtle);
-		padding: 2px 8px;
-		border-radius: var(--radius-full);
-	}
-
-	:global(.receipts-icon) {
 		color: var(--success);
 	}
 
