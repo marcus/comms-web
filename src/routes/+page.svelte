@@ -63,6 +63,63 @@
 	let searchInputEl = $state<HTMLInputElement | null>(null);
 	let replyTextareaEl = $state<HTMLTextAreaElement | null>(null);
 
+	// Resizable panes (widths persisted to localStorage)
+	const PANE_MIN = { sidebar: 200, list: 300 };
+	const PANE_MAX = { sidebar: 360, list: 560 };
+	const PANE_DEFAULT = { sidebar: 240, list: 380 };
+
+	function paneWidthVar(pane: 'sidebar' | 'list') {
+		return pane === 'sidebar' ? '--sb-w' : '--list-w';
+	}
+
+	function clampPane(pane: 'sidebar' | 'list', w: number) {
+		return Math.min(PANE_MAX[pane], Math.max(PANE_MIN[pane], w));
+	}
+
+	function startPaneResize(e: PointerEvent, pane: 'sidebar' | 'list') {
+		const gutter = e.currentTarget as HTMLElement;
+		const layout = gutter.closest('.app-layout') as HTMLElement | null;
+		if (!layout) return;
+		const current =
+			parseFloat(getComputedStyle(layout).getPropertyValue(paneWidthVar(pane))) ||
+			PANE_DEFAULT[pane];
+		const startX = e.clientX;
+		gutter.classList.add('dragging');
+		const onMove = (ev: PointerEvent) => {
+			layout.style.setProperty(paneWidthVar(pane), `${clampPane(pane, current + ev.clientX - startX)}px`);
+		};
+		const onUp = () => {
+			window.removeEventListener('pointermove', onMove);
+			window.removeEventListener('pointerup', onUp);
+			gutter.classList.remove('dragging');
+			try {
+				localStorage.setItem(
+					'comms-web:pane-widths',
+					JSON.stringify({
+						sb: layout.style.getPropertyValue('--sb-w'),
+						list: layout.style.getPropertyValue('--list-w')
+					})
+				);
+			} catch {
+				/* private mode: widths last for the session */
+			}
+		};
+		window.addEventListener('pointermove', onMove);
+		window.addEventListener('pointerup', onUp);
+	}
+
+	function resetPaneWidths() {
+		const layout = document.querySelector('.app-layout') as HTMLElement | null;
+		if (!layout) return;
+		layout.style.removeProperty('--sb-w');
+		layout.style.removeProperty('--list-w');
+		try {
+			localStorage.removeItem('comms-web:pane-widths');
+		} catch {
+			/* ignore */
+		}
+	}
+
 	// Derived mappings
 	const agentMap = $derived(
 		new Map<string, CommsAgent>(agents.map((a) => [a.id, a]))
@@ -383,6 +440,21 @@
 	onMount(() => {
 		loadData();
 
+		// Restore persisted pane widths
+		try {
+			const saved = JSON.parse(localStorage.getItem('comms-web:pane-widths') || 'null');
+			const layout = document.querySelector('.app-layout') as HTMLElement | null;
+			if (saved && layout) {
+				const sb = parseFloat(saved.sb);
+				const list = parseFloat(saved.list);
+				if (Number.isFinite(sb)) layout.style.setProperty('--sb-w', `${clampPane('sidebar', sb)}px`);
+				if (Number.isFinite(list))
+					layout.style.setProperty('--list-w', `${clampPane('list', list)}px`);
+			}
+		} catch {
+			/* defaults stand */
+		}
+
 		// Relative time ticker: updates every 5s so 'just now' refreshes reactively
 		const timeTicker = setInterval(() => {
 			now = Date.now();
@@ -633,6 +705,16 @@
 		</div>
 	</aside>
 
+	<div
+		class="pane-gutter"
+		role="separator"
+		aria-orientation="vertical"
+		aria-label="Resize navigation pane"
+		title="Drag to resize (double-click to reset)"
+		onpointerdown={(e) => startPaneResize(e, 'sidebar')}
+		ondblclick={resetPaneWidths}
+	></div>
+
 	<!-- 2. MIDDLE LIST PANE -->
 	<section class="list-pane">
 		<header class="pane-header">
@@ -748,6 +830,16 @@
 			{/if}
 		</div>
 	</section>
+
+	<div
+		class="pane-gutter"
+		role="separator"
+		aria-orientation="vertical"
+		aria-label="Resize message list pane"
+		title="Drag to resize (double-click to reset)"
+		onpointerdown={(e) => startPaneResize(e, 'list')}
+		ondblclick={resetPaneWidths}
+	></div>
 
 	<!-- 3. RIGHT DETAIL / THREAD PANE -->
 	<main class="detail-pane">
@@ -1070,11 +1162,33 @@
 	/* Full Viewport App Layout */
 	.app-layout {
 		display: grid;
-		grid-template-columns: 240px 380px 1fr;
+		grid-template-columns: var(--sb-w, 240px) auto var(--list-w, 380px) auto minmax(0, 1fr);
 		height: 100vh;
 		width: 100vw;
 		background: var(--bg-app);
 		overflow: hidden;
+	}
+
+	.sidebar,
+	.list-pane,
+	.detail-pane {
+		min-width: 0;
+		min-height: 0;
+	}
+
+	/* Draggable pane divider */
+	.pane-gutter {
+		width: 5px;
+		cursor: col-resize;
+		touch-action: none;
+		background: transparent;
+		transition: background var(--duration-fast);
+		z-index: 5;
+	}
+
+	.pane-gutter:hover,
+	.pane-gutter.dragging {
+		background: rgba(192, 152, 47, 0.4);
 	}
 
 	/* 1. SIDEBAR */
