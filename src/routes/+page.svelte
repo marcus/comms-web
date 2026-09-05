@@ -90,20 +90,37 @@
 		const onUp = () => {
 			window.removeEventListener('pointermove', onMove);
 			window.removeEventListener('pointerup', onUp);
-			try {
-				localStorage.setItem(
-					'comms-web:pane-widths',
-					JSON.stringify({
-						sb: layout.style.getPropertyValue('--sb-w'),
-						list: layout.style.getPropertyValue('--list-w')
-					})
-				);
-			} catch {
-				/* private mode: widths last for the session */
-			}
+			savePaneWidths(layout);
 		};
 		window.addEventListener('pointermove', onMove);
 		window.addEventListener('pointerup', onUp);
+	}
+
+	function savePaneWidths(layout: HTMLElement) {
+		try {
+			localStorage.setItem(
+				'comms-web:pane-widths',
+				JSON.stringify({
+					sb: layout.style.getPropertyValue('--sb-w'),
+					list: layout.style.getPropertyValue('--list-w')
+				})
+			);
+		} catch {
+			/* private mode: widths last for the session */
+		}
+	}
+
+	function nudgePaneWidth(e: KeyboardEvent, pane: 'sidebar' | 'list') {
+		if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+		e.preventDefault();
+		const layout = (e.currentTarget as HTMLElement).closest('.app-layout') as HTMLElement | null;
+		if (!layout) return;
+		const current =
+			parseFloat(getComputedStyle(layout).getPropertyValue(paneWidthVar(pane))) ||
+			PANE_DEFAULT[pane];
+		const delta = e.key === 'ArrowRight' ? 12 : -12;
+		layout.style.setProperty(paneWidthVar(pane), `${clampPane(pane, current + delta)}px`);
+		savePaneWidths(layout);
 	}
 
 	function resetPaneWidths() {
@@ -700,8 +717,10 @@
 		role="separator"
 		aria-orientation="vertical"
 		aria-label="Resize navigation pane"
-		title="Drag to resize (double-click to reset)"
+		title="Drag or arrow keys to resize (double-click to reset)"
+		tabindex="0"
 		onpointerdown={(e) => startPaneResize(e, 'sidebar')}
+		onkeydown={(e) => nudgePaneWidth(e, 'sidebar')}
 		ondblclick={resetPaneWidths}
 	></div>
 
@@ -825,8 +844,10 @@
 		role="separator"
 		aria-orientation="vertical"
 		aria-label="Resize message list pane"
-		title="Drag to resize (double-click to reset)"
+		title="Drag or arrow keys to resize (double-click to reset)"
+		tabindex="0"
 		onpointerdown={(e) => startPaneResize(e, 'list')}
+		onkeydown={(e) => nudgePaneWidth(e, 'list')}
 		ondblclick={resetPaneWidths}
 	></div>
 
@@ -1160,8 +1181,10 @@
 	}
 
 	.pane-gutter:hover,
-	.pane-gutter:active {
+	.pane-gutter:active,
+	.pane-gutter:focus-visible {
 		background: rgba(192, 152, 47, 0.4);
+		outline: none;
 	}
 
 	/* 1. SIDEBAR */
