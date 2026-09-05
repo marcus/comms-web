@@ -1088,7 +1088,7 @@
 	}
 
 	.sidebar-header {
-		padding: 12px 14px;
+		padding: 12px var(--pad-chrome);
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
@@ -1232,7 +1232,7 @@
 	.sidebar-scroll {
 		flex: 1;
 		overflow-y: auto;
-		padding: 10px 8px;
+		padding: 10px var(--pad-chrome);
 		display: flex;
 		flex-direction: column;
 		gap: 16px;
@@ -1359,7 +1359,7 @@
 	}
 
 	.pane-header {
-		padding: 10px 14px;
+		padding: 10px var(--pad-chrome);
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
@@ -1421,7 +1421,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 3px;
-		padding: 10px 14px;
+		padding: 10px var(--pad-chrome);
 		border-bottom: 1px solid var(--border-subtle);
 		cursor: pointer;
 		outline: none;
@@ -1596,7 +1596,7 @@
 	}
 
 	.detail-topbar {
-		padding: 9px 18px;
+		padding: 10px var(--pad-detail);
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
@@ -1676,7 +1676,7 @@
 	.detail-scroll {
 		flex: 1;
 		overflow-y: auto;
-		padding: 20px 24px;
+		padding: 20px var(--pad-detail);
 		display: flex;
 		flex-direction: column;
 		gap: 20px;
@@ -1852,7 +1852,7 @@
 
 	/* Quick Reply Bar */
 	.detail-reply-bar {
-		padding: 12px 18px;
+		padding: 12px var(--pad-detail);
 		border-top: 1px solid var(--border-default);
 		background: rgba(0, 0, 0, 0.2);
 		display: flex;

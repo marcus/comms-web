@@ -53,10 +53,20 @@
 	--font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-	--radius-sm: 4px;
+	--radius-sm: 3px;
 	--radius-md: 6px;
 	--radius-lg: 8px;
 	--radius-full: 9999px;
+
+	/* Shared chrome rhythm: pane headers align on 12px, detail column on 20px */
+	--pad-chrome: 12px;
+	--pad-detail: 20px;
+
+	/* Consistent form controls */
+	--input-bg: rgba(255, 255, 255, 0.04);
+	--input-bg-focus: rgba(255, 255, 255, 0.06);
+	--input-padding: 7px 10px;
+	--focus-ring: 0 0 0 2px rgba(192, 152, 47, 0.28);
 
 	--duration-fast: 150ms;
 	--duration-normal: 200ms;
@@ -108,6 +118,29 @@ button {
 	background: none;
 	border: none;
 	cursor: pointer;
+}
+
+button:focus-visible,
+a:focus-visible,
+[role='button']:focus-visible {
+	outline: 2px solid var(--accent-default);
+	outline-offset: 1px;
+	border-radius: var(--radius-sm);
+}
+
+select option {
+	background-color: var(--bg-elevated);
+	color: var(--text-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
 }
 
 /* Markdown typography */
