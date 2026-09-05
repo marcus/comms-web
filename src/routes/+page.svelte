@@ -44,6 +44,8 @@
 	let liveConnected = $state(false);
 	let copyFeedback = $state(false);
 	let copyBodyFeedback = $state(false);
+	let now = $state(Date.now());
+	let newlyArrivedIds = $state<Set<string>>(new Set());
 
 	// Reply & Compose
 	let replyBody = $state('');
@@ -197,7 +199,16 @@
 				})
 			});
 			if (res.ok) {
+				const json = await res.json();
 				replyBody = '';
+				if (json.message?.id) {
+					newlyArrivedIds = new Set([...newlyArrivedIds, json.message.id]);
+					setTimeout(() => {
+						const cleaned = new Set(newlyArrivedIds);
+						cleaned.delete(json.message.id);
+						newlyArrivedIds = cleaned;
+					}, 2500);
+				}
 				await loadData(false);
 				if (selectedMessageId) {
 					await selectMessage(selectedMessageId);
@@ -239,6 +250,14 @@
 				composeBody = '';
 				composeTitle = '';
 				showComposeModal = false;
+				if (json.message?.id) {
+					newlyArrivedIds = new Set([...newlyArrivedIds, json.message.id]);
+					setTimeout(() => {
+						const cleaned = new Set(newlyArrivedIds);
+						cleaned.delete(json.message.id);
+						newlyArrivedIds = cleaned;
+					}, 2500);
+				}
 				await loadData(false);
 				if (json.message?.id) {
 					selectedMessageId = json.message.id;
@@ -364,6 +383,11 @@
 	onMount(() => {
 		loadData();
 
+		// Relative time ticker: updates every 5s so 'just now' refreshes reactively
+		const timeTicker = setInterval(() => {
+			now = Date.now();
+		}, 5000);
+
 		// Set up SSE streaming for live real-time updates
 		let evtSource: EventSource | null = null;
 		try {
@@ -382,6 +406,20 @@
 						const existingIds = new Set(messages.map((m) => m.id));
 						const newItems = data.items.filter((m: CommsMessage) => !existingIds.has(m.id));
 						if (newItems.length > 0) {
+							// Highlight newly arrived rows with animation
+							const updatedNewIds = new Set(newlyArrivedIds);
+							for (const m of newItems) {
+								updatedNewIds.add(m.id);
+							}
+							newlyArrivedIds = updatedNewIds;
+							setTimeout(() => {
+								const cleaned = new Set(newlyArrivedIds);
+								for (const m of newItems) {
+									cleaned.delete(m.id);
+								}
+								newlyArrivedIds = cleaned;
+							}, 2500);
+
 							messages = [...newItems, ...messages];
 							// If selected message is in this thread, update thread
 							if (selectedMessageId) {
@@ -410,6 +448,7 @@
 
 		return () => {
 			if (evtSource) evtSource.close();
+			clearInterval(timeTicker);
 		};
 	});
 </script>
@@ -656,6 +695,7 @@
 						tabindex="0"
 						class="message-row"
 						class:selected={isSelected}
+						class:is-new={newlyArrivedIds.has(msg.id)}
 						onclick={() => (selectedMessageId = msg.id)}
 						onkeydown={(e) => e.key === 'Enter' && (selectedMessageId = msg.id)}
 					>
@@ -677,7 +717,7 @@
 							</div>
 							<div class="row-time-wrap">
 								<span class="row-seq font-mono">#{msg.sequence}</span>
-								<span class="row-time">{formatTimeAgo(msg.created_at)}</span>
+								<span class="row-time">{formatTimeAgo(msg.created_at, now)}</span>
 							</div>
 						</div>
 
@@ -765,7 +805,7 @@
 							title={receipts
 								.map(
 									(r) =>
-										`@${r.agent?.handle || r.agent?.id?.slice(0, 8) || 'agent'}: ${r.state}${r.read_at ? ` (${formatTimeAgo(r.read_at)})` : ''}`
+										`@${r.agent?.handle || r.agent?.id?.slice(0, 8) || 'agent'}: ${r.state}${r.read_at ? ` (${formatTimeAgo(r.read_at, now)})` : ''}`
 								)
 								.join('\n')}
 						>
@@ -805,7 +845,7 @@
 							<div class="author-line-2 font-mono">
 								<span>{formatExactDate(selectedMessage.created_at)}</span>
 								<span class="meta-sep">·</span>
-								<span>{formatTimeAgo(selectedMessage.created_at)}</span>
+								<span>{formatTimeAgo(selectedMessage.created_at, now)}</span>
 								{#if selectedMessage.author_context?.project}
 									<span class="meta-sep">·</span>
 									<span>project: {selectedMessage.author_context.project}</span>
@@ -856,7 +896,7 @@
 											{#if tmsg.title && tmsg.title !== selectedMessage.title}
 												<span class="thread-title">{tmsg.title}</span>
 											{/if}
-											<span class="thread-time font-mono">{formatTimeAgo(tmsg.created_at)}</span>
+											<span class="thread-time font-mono">{formatTimeAgo(tmsg.created_at, now)}</span>
 										</div>
 										<div class="thread-body prose">
 											{@html renderMarkdown(tmsg.body)}
@@ -1069,7 +1109,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		color: #fff;
+		color: var(--text-on-accent);
 	}
 
 	.brand-name {
@@ -1107,7 +1147,7 @@
 
 	.live-dot.active {
 		background: var(--success);
-		box-shadow: 0 0 6px rgba(63, 185, 80, 0.6);
+		box-shadow: 0 0 6px rgba(91, 143, 99, 0.6);
 	}
 
 	.sidebar-search {
@@ -1160,8 +1200,9 @@
 		position: absolute;
 		right: 8px;
 		font-size: 10px;
-		color: var(--text-muted);
-		border: 1px solid var(--border-subtle);
+		color: var(--accent-default);
+		background: var(--bg-elevated);
+		border: 1px solid var(--border-default);
 		border-radius: 3px;
 		padding: 0 4px;
 		font-family: var(--font-mono);
@@ -1172,20 +1213,20 @@
 		align-items: center;
 		justify-content: center;
 		gap: 6px;
-		background: var(--bg-hover);
-		border: 1px solid var(--border-default);
+		background: var(--accent-subtle);
+		border: 1px solid rgba(192, 152, 47, 0.35);
 		border-radius: var(--radius-sm);
-		color: var(--text-primary);
+		color: var(--accent-default);
 		padding: 5px 10px;
 		font-size: 12px;
-		font-weight: 500;
+		font-weight: 600;
 		transition: all var(--duration-fast);
 	}
 
 	.btn-compose:hover {
 		background: var(--accent-default);
 		border-color: var(--accent-default);
-		color: #fff;
+		color: var(--text-on-accent);
 	}
 
 	.sidebar-scroll {
@@ -1239,8 +1280,8 @@
 
 	.nav-item.active {
 		background: var(--accent-subtle);
-		color: #fff;
-		font-weight: 500;
+		color: var(--accent-default);
+		font-weight: 600;
 	}
 
 	:global(.nav-icon) {
@@ -1249,7 +1290,7 @@
 	}
 
 	:global(.nav-icon-direct) {
-		color: #38bdf8;
+		color: var(--accent-secondary);
 	}
 
 	.nav-label {
@@ -1347,10 +1388,11 @@
 	.header-badge {
 		font-size: 11px;
 		font-family: var(--font-mono);
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--bg-elevated);
+		border: 1px solid var(--border-default);
 		padding: 1px 6px;
 		border-radius: var(--radius-full);
-		color: var(--text-secondary);
+		color: var(--accent-secondary);
 	}
 
 	.btn-icon {
@@ -1384,7 +1426,7 @@
 		cursor: pointer;
 		outline: none;
 		border-radius: 0;
-		transition: background var(--duration-fast);
+		transition: background var(--duration-fast), border-left-color var(--duration-fast);
 		border-left: 3px solid transparent;
 	}
 
@@ -1395,6 +1437,40 @@
 	.message-row.selected {
 		background: var(--bg-active);
 		border-left-color: var(--accent-default);
+	}
+
+	.message-row.selected .row-title {
+		color: var(--text-selection);
+	}
+
+	.message-row.is-new {
+		animation: row-enter 350ms cubic-bezier(0.16, 1, 0.3, 1), row-pulse 2.5s ease-out;
+	}
+
+	@keyframes row-enter {
+		from {
+			opacity: 0;
+			transform: translateY(-8px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@keyframes row-pulse {
+		0% {
+			background: rgba(192, 152, 47, 0.28);
+			border-left-color: var(--accent-default);
+		}
+		40% {
+			background: rgba(192, 152, 47, 0.16);
+			border-left-color: var(--accent-default);
+		}
+		100% {
+			background: transparent;
+			border-left-color: transparent;
+		}
 	}
 
 	.row-meta {
@@ -1424,7 +1500,7 @@
 	}
 
 	.row-topic.is-direct {
-		color: #38bdf8;
+		color: var(--accent-secondary);
 	}
 
 	.row-time-wrap {
@@ -1434,8 +1510,9 @@
 	}
 
 	.row-seq {
-		color: var(--text-muted);
+		color: var(--accent-secondary);
 		font-size: 10px;
+		font-family: var(--font-mono);
 	}
 
 	.row-time {
@@ -1470,14 +1547,16 @@
 		font-size: 10px;
 		color: var(--accent-default);
 		background: var(--accent-subtle);
+		border: 1px solid rgba(192, 152, 47, 0.25);
 		padding: 1px 5px;
 		border-radius: 3px;
 	}
 
 	.tag-project {
 		font-size: 10px;
-		color: var(--text-muted);
-		background: rgba(255, 255, 255, 0.04);
+		color: var(--accent-secondary);
+		background: rgba(74, 143, 143, 0.12);
+		border: 1px solid rgba(74, 143, 143, 0.25);
 		padding: 1px 5px;
 		border-radius: 3px;
 	}
@@ -1545,7 +1624,12 @@
 
 	.detail-seq {
 		font-size: 11px;
-		color: var(--text-muted);
+		font-family: var(--font-mono);
+		color: var(--accent-secondary);
+		background: rgba(74, 143, 143, 0.12);
+		border: 1px solid rgba(74, 143, 143, 0.25);
+		padding: 1px 6px;
+		border-radius: var(--radius-sm);
 	}
 
 	.btn-copy-id,
@@ -1726,8 +1810,8 @@
 	}
 
 	.thread-item.current {
-		background: rgba(94, 106, 210, 0.06);
-		border-color: var(--border-accent);
+		background: var(--accent-subtle);
+		border-color: var(--accent-default);
 	}
 
 	.thread-item-dot {
@@ -1833,11 +1917,11 @@
 		align-items: center;
 		gap: 5px;
 		background: var(--accent-default);
-		color: #fff;
+		color: var(--text-on-accent);
 		border-radius: var(--radius-sm);
 		padding: 8px 14px;
 		font-size: 12px;
-		font-weight: 500;
+		font-weight: 600;
 		transition: background var(--duration-fast);
 		height: 36px;
 	}
@@ -1906,12 +1990,13 @@
 	}
 
 	kbd {
-		background: rgba(255, 255, 255, 0.1);
+		background: var(--bg-elevated);
+		border: 1px solid var(--border-default);
 		border-radius: 3px;
-		padding: 1px 4px;
+		padding: 1px 5px;
 		font-family: var(--font-mono);
 		font-size: 10px;
-		color: var(--text-primary);
+		color: var(--accent-default);
 	}
 
 	/* COMPOSE MODAL */
@@ -1981,9 +2066,10 @@
 	}
 
 	.modal-tab.active {
-		background: var(--bg-hover);
-		color: var(--text-primary);
-		font-weight: 500;
+		background: var(--accent-subtle);
+		color: var(--accent-default);
+		font-weight: 600;
+		border: 1px solid rgba(192, 152, 47, 0.3);
 	}
 
 	.modal-field {
@@ -2045,11 +2131,11 @@
 		align-items: center;
 		gap: 6px;
 		background: var(--accent-default);
-		color: #fff;
+		color: var(--text-on-accent);
 		border-radius: var(--radius-sm);
 		padding: 6px 14px;
 		font-size: 12px;
-		font-weight: 500;
+		font-weight: 600;
 		transition: background var(--duration-fast);
 	}
 

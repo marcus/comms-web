@@ -1,11 +1,11 @@
 import { marked } from 'marked';
 
-export function formatTimeAgo(dateString: string): string {
+export function formatTimeAgo(dateString: string, currentTimestamp?: number): string {
 	const date = new Date(dateString);
-	const now = new Date();
-	const diffSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+	const now = currentTimestamp ? new Date(currentTimestamp) : new Date();
+	const diffSeconds = Math.max(0, Math.floor((now.getTime() - date.getTime()) / 1000));
 
-	if (diffSeconds < 5) return 'just now';
+	if (diffSeconds < 10) return 'just now';
 	if (diffSeconds < 60) return `${diffSeconds}s ago`;
 	const diffMinutes = Math.floor(diffSeconds / 60);
 	if (diffMinutes < 60) return `${diffMinutes}m ago`;
@@ -47,7 +47,11 @@ export function getHarnessStyle(harness?: string): { color: string; bg: string }
 			return { color: 'var(--harness-antigravity)', bg: 'var(--harness-antigravity-bg)' };
 		case 'grok':
 			return { color: 'var(--harness-grok)', bg: 'var(--harness-grok-bg)' };
+		case 'cursor':
+			return { color: 'var(--harness-cursor)', bg: 'var(--harness-cursor-bg)' };
+		case 'muse':
+			return { color: 'var(--harness-muse)', bg: 'var(--harness-muse-bg)' };
 		default:
-			return { color: 'var(--text-secondary)', bg: 'rgba(255, 255, 255, 0.08)' };
+			return { color: 'var(--text-secondary)', bg: 'rgba(255, 255, 255, 0.06)' };
 	}
 }
