@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
+	import MessageReceipts from '$lib/MessageReceipts.svelte';
+	import AgentPortrait from '$lib/AgentPortrait.svelte';
 	import {
 		MessageSquare,
 		Hash,
@@ -20,7 +22,7 @@
 		Terminal,
 		ExternalLink
 	} from '@lucide/svelte';
-	import type { CommsAgent, CommsHandshake, CommsMessage, CommsReceipt, CommsTopic } from '$lib/server/comms';
+	import type { CommsAgent, CommsHandshake, CommsMessage, CommsTopic } from '$lib/server/comms';
 	import { formatExactDate, formatTimeAgo, getHandleColor, getHarnessStyle, renderMarkdown } from '$lib/utils';
 
 	// Svelte 5 Runes
@@ -36,9 +38,7 @@
 	let searchQuery = $state('');
 
 	let threadMessages = $state<CommsMessage[]>([]);
-	let receipts = $state<CommsReceipt[]>([]);
 	let loadingThread = $state(false);
-	let loadingReceipts = $state(false);
 
 	let isRefreshing = $state(false);
 	let liveConnected = $state(false);
@@ -53,6 +53,8 @@
 	let replyAuthor = $state('');
 
 	let showComposeModal = $state(false);
+	let composeDialog = $state<HTMLDivElement | null>(null);
+	let composeReturnFocus: HTMLElement | null = null;
 	let composeType = $state<'topic' | 'direct'>('topic');
 	let composeTopic = $state('');
 	let composeRecipient = $state('');
@@ -132,6 +134,38 @@
 			localStorage.removeItem('comms-web:pane-widths');
 		} catch {
 			/* ignore */
+		}
+	}
+
+	$effect(() => {
+		if (!showComposeModal) return;
+		const previousFocus = composeReturnFocus;
+		let canceled = false;
+		void tick().then(() => {
+			if (!canceled) composeDialog?.querySelector<HTMLElement>('.modal-tab.active')?.focus();
+		});
+		return () => {
+			canceled = true;
+			void tick().then(() => previousFocus?.focus());
+		};
+	});
+
+	function openCompose() {
+		composeReturnFocus = document.activeElement as HTMLElement | null;
+		showComposeModal = true;
+	}
+
+	function trapComposeFocus(event: KeyboardEvent) {
+		if (event.key !== 'Tab' || !composeDialog) return;
+		const controls = [...composeDialog.querySelectorAll<HTMLElement>('button:not(:disabled), input, select, textarea, [tabindex="0"]')];
+		const first = controls[0];
+		const last = controls[controls.length - 1];
+		if (event.shiftKey && (document.activeElement === first || !composeDialog.contains(document.activeElement))) {
+			event.preventDefault();
+			last?.focus();
+		} else if (!event.shiftKey && document.activeElement === last) {
+			event.preventDefault();
+			first?.focus();
 		}
 	}
 
@@ -224,29 +258,18 @@
 	async function selectMessage(id: string) {
 		selectedMessageId = id;
 		loadingThread = true;
-		loadingReceipts = true;
 		threadMessages = [];
-		receipts = [];
 
 		try {
-			const [threadRes, receiptsRes] = await Promise.all([
-				fetch(`/api/thread/${encodeURIComponent(id)}`),
-				fetch(`/api/receipts/${encodeURIComponent(id)}`)
-			]);
-
+			const threadRes = await fetch(`/api/thread/${encodeURIComponent(id)}`);
 			if (threadRes.ok) {
 				const data = await threadRes.json();
-				threadMessages = data.items || [];
-			}
-			if (receiptsRes.ok) {
-				const data = await receiptsRes.json();
-				receipts = data.receipts || [];
+				if (selectedMessageId === id) threadMessages = data.items || [];
 			}
 		} catch (err) {
-			console.error('Error fetching thread or receipts', err);
+			console.error('Error fetching thread', err);
 		} finally {
-			loadingThread = false;
-			loadingReceipts = false;
+			if (selectedMessageId === id) loadingThread = false;
 		}
 	}
 
@@ -406,7 +429,7 @@
 
 		if (e.key === 'c') {
 			e.preventDefault();
-			showComposeModal = true;
+			openCompose();
 			return;
 		}
 
@@ -542,7 +565,7 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="app-layout">
+<div class="app-layout" inert={showComposeModal}>
 	<!-- 1. LEFT SIDEBAR -->
 	<aside class="sidebar">
 		<!-- Workspace / Service Status -->
@@ -571,20 +594,22 @@
 					bind:this={searchInputEl}
 					bind:value={searchQuery}
 					type="text"
-					placeholder="Search messages... (/)"
+					placeholder="Search messages"
+					aria-label="Search messages"
 					class="search-input"
 				/>
 				{#if searchQuery}
-					<button onclick={() => (searchQuery = '')} class="search-clear">
+					<button onclick={() => (searchQuery = '')} class="search-clear" aria-label="Clear search">
 						<X size={12} />
 					</button>
 				{:else}
 					<span class="key-hint">/</span>
 				{/if}
 			</div>
-			<button class="btn-compose" onclick={() => (showComposeModal = true)} title="New Message (c)">
+			<button class="btn-compose" onclick={openCompose} title="New Message (c)">
 				<Plus size={14} />
 				<span>Compose</span>
+				<kbd class="compose-key">C</kbd>
 			</button>
 		</div>
 
@@ -678,10 +703,7 @@
 							selectedTopicId = null;
 						}}
 					>
-						<span
-							class="agent-pill-dot"
-							style:background-color={harnessStyle.color}
-						></span>
+						<AgentPortrait agentId={agent.id} size={22} />
 						<span class="nav-label text-ellipsis" title={agent.display_name || agent.handle}>
 							@{agent.handle}
 						</span>
@@ -747,7 +769,7 @@
 				<span class="header-badge">{filteredMessages.length}</span>
 			</div>
 			<div class="header-right">
-				<button class="btn-icon" onclick={() => loadData(true)} title="Refresh (r)">
+				<button class="btn-icon" onclick={() => loadData(true)} title="Refresh messages" aria-label="Refresh messages">
 					<RefreshCw size={13} class={isRefreshing ? 'spin' : ''} />
 				</button>
 			</div>
@@ -793,10 +815,10 @@
 						<!-- Meta top row -->
 						<div class="row-meta">
 							<div class="row-author-wrap">
+								<AgentPortrait agentId={msg.author_id} size={18} />
 								<span
 									class="row-author-badge"
 									style:color={handleStyle.color}
-									style:background-color={handleStyle.bg}
 								>
 									@{author?.handle || msg.author_id.slice(0, 8)}
 								</span>
@@ -818,7 +840,7 @@
 						</div>
 
 						<!-- Snippet -->
-						<div class="row-snippet text-ellipsis">
+						<div class="row-snippet">
 							{msg.body.replace(/\n+/g, ' ')}
 						</div>
 
@@ -908,15 +930,12 @@
 			<div class="detail-scroll">
 				<!-- Root Message Header -->
 				<div class="message-header-box">
-					<h1 class="detail-title">{selectedMessage.title}</h1>
-
-					<div class="author-card">
-						<div class="author-avatar" style:background-color={harnessStyle.bg} style:color={harnessStyle.color}>
-							{(author?.handle?.[0] || 'A').toUpperCase()}
-						</div>
+					<AgentPortrait agentId={selectedMessage.author_id} size={88} fillHeader />
+					<div class="message-header-copy">
+						<h1 class="detail-title">{selectedMessage.title}</h1>
 						<div class="author-details">
 							<div class="author-line-1">
-								<span class="author-handle font-mono">@{author?.handle || selectedMessage.author_id}</span>
+								<span class="author-handle">@{author?.handle || selectedMessage.author_id}</span>
 								{#if author?.display_name}
 									<span class="author-name">({author.display_name})</span>
 								{/if}
@@ -950,6 +969,10 @@
 					</div>
 				</div>
 
+				{#key selectedMessage.id}
+					<MessageReceipts messageId={selectedMessage.id} {now} />
+				{/key}
+
 				<!-- Thread Timeline Section -->
 				{#if threadMessages.length > 1}
 					<div class="thread-section">
@@ -978,7 +1001,7 @@
 									<div class="thread-item-dot" style:background-color={tHarnessStyle.color}></div>
 									<div class="thread-item-content">
 										<div class="thread-item-header">
-											<span class="thread-author font-mono" style:color={tHarnessStyle.color}>
+											<span class="thread-author" style:color={tHarnessStyle.color}>
 												@{tAuthor?.handle || tmsg.author_id.slice(0, 8)}
 											</span>
 											{#if tmsg.title && tmsg.title !== selectedMessage.title}
@@ -1000,20 +1023,21 @@
 			<!-- Quick Reply Bar -->
 			<footer class="detail-reply-bar">
 				<div class="reply-meta-row">
-					<span class="reply-as-label">Reply as:</span>
-					<select bind:value={replyAuthor} class="reply-author-select">
+					<label for="reply-author" class="reply-as-label">Reply as</label>
+					<select id="reply-author" bind:value={replyAuthor} class="reply-author-select">
 						{#each agents as a}
 							<option value={a.handle}>@{a.handle} {a.harness ? `(${a.harness})` : ''}</option>
 						{/each}
 						<option value="operator">@operator (Operator)</option>
 					</select>
-					<span class="reply-shortcut-hint">Cmd+Enter to submit</span>
+					<span class="reply-shortcut-hint"><kbd>⌘</kbd><kbd>↵</kbd> to send</span>
 				</div>
 				<div class="reply-input-wrap">
 					<textarea
 						bind:this={replyTextareaEl}
 						bind:value={replyBody}
-						placeholder="Write a reply in Markdown... (r)"
+						placeholder="Write a reply…"
+						aria-label="Reply message"
 						class="reply-textarea"
 						rows="2"
 					></textarea>
@@ -1054,10 +1078,10 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div class="modal-backdrop" role="presentation" onclick={() => (showComposeModal = false)}>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<div class="modal-panel" role="dialog" aria-modal="true" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+		<div bind:this={composeDialog} onkeydown={trapComposeFocus} class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="compose-heading" tabindex="-1" onclick={(e) => e.stopPropagation()}>
 			<div class="modal-header">
-				<h3>New Message</h3>
-				<button class="btn-icon" onclick={() => (showComposeModal = false)}>
+				<div><h3 id="compose-heading">New message</h3><p class="modal-description">Start a conversation with your agents.</p></div>
+				<button class="btn-icon" aria-label="Close compose" onclick={() => (showComposeModal = false)}>
 					<X size={15} />
 				</button>
 			</div>
@@ -1069,7 +1093,7 @@
 						onclick={() => (composeType = 'topic')}
 					>
 						<Hash size={13} />
-						<span>Public Topic</span>
+						<span>Public topic</span>
 					</button>
 					<button
 						class="modal-tab"
@@ -1077,59 +1101,60 @@
 						onclick={() => (composeType = 'direct')}
 					>
 						<User size={13} />
-						<span>Direct Message</span>
+						<span>Direct message</span>
 					</button>
 				</div>
 
-				<div class="modal-field">
-					<label for="compose-author">Sender Identity</label>
-					<select id="compose-author" bind:value={replyAuthor} class="form-input">
-						{#each agents as a}
-							<option value={a.handle}>@{a.handle} {a.harness ? `(${a.harness})` : ''}</option>
-						{/each}
-						<option value="operator">@operator (Operator)</option>
-					</select>
-				</div>
-
-				{#if composeType === 'topic'}
+				<div class="modal-routing">
 					<div class="modal-field">
-						<label for="compose-topic">Topic</label>
-						<select id="compose-topic" bind:value={composeTopic} class="form-input">
-							{#each publicTopics as top}
-								<option value={top.name}>#{top.name}</option>
-							{/each}
-						</select>
-					</div>
-				{:else}
-					<div class="modal-field">
-						<label for="compose-recipient">Recipient Handle</label>
-						<select id="compose-recipient" bind:value={composeRecipient} class="form-input">
+						<label for="compose-author">From</label>
+						<select id="compose-author" bind:value={replyAuthor} class="form-input">
 							{#each agents as a}
-								<option value={a.handle}>@{a.handle}</option>
+								<option value={a.handle}>@{a.handle} {a.harness ? `(${a.harness})` : ''}</option>
 							{/each}
+							<option value="operator">@operator (Operator)</option>
 						</select>
 					</div>
-				{/if}
 
+					{#if composeType === 'topic'}
+						<div class="modal-field">
+							<label for="compose-topic">Topic</label>
+							<select id="compose-topic" bind:value={composeTopic} class="form-input">
+								{#each publicTopics as top}
+									<option value={top.name}>#{top.name}</option>
+								{/each}
+							</select>
+						</div>
+					{:else}
+						<div class="modal-field">
+							<label for="compose-recipient">To</label>
+							<select id="compose-recipient" bind:value={composeRecipient} class="form-input">
+								{#each agents as a}
+									<option value={a.handle}>@{a.handle}</option>
+								{/each}
+							</select>
+						</div>
+					{/if}
+				</div>
 				<div class="modal-field">
 					<label for="compose-title">Title</label>
 					<input
 						id="compose-title"
 						type="text"
 						bind:value={composeTitle}
-						placeholder="Message title..."
+						placeholder="Give your message a subject"
 						class="form-input"
 					/>
 				</div>
 
 				<div class="modal-field">
-					<label for="compose-body">Body (Markdown)</label>
+					<label for="compose-body">Message <span class="field-hint">Markdown supported</span></label>
 					<textarea
 						id="compose-body"
 						bind:value={composeBody}
 						rows="6"
-						placeholder="Write message content in Markdown..."
-						class="form-input form-textarea font-mono"
+						placeholder="What would you like to share?"
+						class="form-input form-textarea"
 					></textarea>
 				</div>
 			</div>
@@ -1147,7 +1172,7 @@
 					{:else}
 						<Send size={13} />
 					{/if}
-					<span>Publish Message</span>
+					<span>Send message</span>
 				</button>
 			</div>
 		</div>
@@ -1174,10 +1199,10 @@
 
 	/* Draggable pane divider */
 	.pane-gutter {
-		width: 5px;
+		width: 4px;
 		cursor: col-resize;
 		touch-action: none;
-		background: transparent;
+		background: var(--bg-app);
 		transition: background var(--duration-fast);
 		z-index: 5;
 	}
@@ -1192,7 +1217,7 @@
 	/* 1. SIDEBAR */
 	.sidebar {
 		background: var(--bg-sidebar);
-		border-right: 1px solid var(--border-default);
+		border-right: 1px solid var(--border-subtle);
 		display: flex;
 		flex-direction: column;
 		height: 100%;
@@ -1200,7 +1225,7 @@
 	}
 
 	.sidebar-header {
-		min-height: 48px;
+		min-height: 66px;
 		padding: 12px var(--pad-chrome);
 		display: flex;
 		align-items: center;
@@ -1211,31 +1236,32 @@
 	.brand {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: 10px;
 	}
 
 	.brand-mark {
-		width: 22px;
-		height: 22px;
-		border-radius: var(--radius-sm);
-		background: var(--accent-default);
+		width: 30px;
+		height: 30px;
+		border-radius: 2px;
+		background: var(--accent-subtle);
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		color: var(--text-on-accent);
+		color: var(--accent-default);
+		border: 1px solid rgba(201, 166, 92, 0.22);
 	}
 
 	.brand-name {
 		font-weight: 600;
-		font-size: 13px;
-		letter-spacing: -0.01em;
+		font-size: 16px;
+		letter-spacing: -0.035em;
 	}
 
 	.brand-version {
-		font-size: 11px;
+		font-size: 10px;
 		color: var(--text-muted);
 		font-family: var(--font-mono);
-		margin-left: 4px;
+		margin-left: 7px;
 	}
 
 	.live-pill {
@@ -1261,21 +1287,21 @@
 	@keyframes live-breathe {
 		0%,
 		100% {
-			box-shadow: 0 0 3px rgba(91, 143, 99, 0.35);
-			opacity: 0.85;
+		box-shadow: 0 0 3px rgba(91, 143, 99, 0.35);
+		opacity: 0.85;
 		}
 		50% {
-			box-shadow: 0 0 10px rgba(91, 143, 99, 0.8);
-			opacity: 1;
+		box-shadow: 0 0 10px rgba(91, 143, 99, 0.8);
+		opacity: 1;
 		}
 	}
 
 	.sidebar-search {
-		padding: 10px 12px;
+		padding: 14px var(--pad-chrome) 16px;
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
-		border-bottom: 1px solid var(--border-subtle);
+		gap: 12px;
+		border-bottom: none;
 	}
 
 	.search-wrap {
@@ -1286,28 +1312,31 @@
 
 	:global(.search-icon) {
 		position: absolute;
-		left: 8px;
+		left: 0;
 		color: var(--text-muted);
 		pointer-events: none;
 	}
 
 	.search-input {
 		width: 100%;
-		background: var(--input-bg);
-		border: 1px solid var(--border-default);
-		border-radius: var(--radius-sm);
-		padding: 6px 24px 6px 26px;
-		font-size: 12.5px;
+		background: transparent;
+		border: 0;
+		border-radius: 0;
+		padding: 6px 25px 6px 23px;
+		font-size: 12px;
 		color: var(--text-primary);
 		outline: none;
 		transition: border-color var(--duration-fast), box-shadow var(--duration-fast),
 			background var(--duration-fast);
+		height: 32px;
+		box-shadow: none;
+		border-bottom: 1px solid var(--border-default);
 	}
 
 	.search-input:focus {
 		border-color: var(--accent-default);
-		background: var(--input-bg-focus);
-		box-shadow: var(--focus-ring);
+		background-color: transparent;
+		box-shadow: 0 1px 0 var(--accent-default);
 	}
 
 	.search-clear {
@@ -1320,12 +1349,12 @@
 
 	.key-hint {
 		position: absolute;
-		right: 8px;
+		right: 1px;
 		font-size: 10px;
 		color: var(--accent-default);
-		background: var(--bg-elevated);
+		background: transparent;
 		border: 1px solid var(--border-default);
-		border-radius: 3px;
+		border-radius: 1px;
 		padding: 0 4px;
 		font-family: var(--font-mono);
 	}
@@ -1333,37 +1362,39 @@
 	.btn-compose {
 		display: flex;
 		align-items: center;
-		justify-content: center;
-		gap: 6px;
-		background: var(--accent-subtle);
-		border: 1px solid rgba(192, 152, 47, 0.35);
-		border-radius: var(--radius-sm);
+		justify-content: flex-start;
+		gap: 9px;
+		background: transparent;
+		border: 1px solid #6d60454d;
+		border-radius: 0;
 		color: var(--accent-default);
-		padding: 5px 10px;
+		padding: 5px 8px;
 		font-size: 12px;
-		font-weight: 600;
+		font-weight: 500;
 		transition: all var(--duration-fast);
+		box-shadow: none;
+		height: 31px;
 	}
 
 	.btn-compose:hover {
-		background: var(--accent-default);
-		border-color: var(--accent-default);
-		color: var(--text-on-accent);
+		background: var(--accent-subtle);
+		border-color: #827251;
+		color: var(--accent-hover);
 	}
 
 	.sidebar-scroll {
 		flex: 1;
 		overflow-y: auto;
-		padding: 10px var(--pad-chrome);
+		padding: 4px 10px 20px;
 		display: flex;
 		flex-direction: column;
-		gap: 16px;
+		gap: 25px;
 	}
 
 	.nav-group {
 		display: flex;
 		flex-direction: column;
-		gap: 1px;
+		gap: 3px;
 	}
 
 	.nav-group-title {
@@ -1372,10 +1403,10 @@
 		justify-content: space-between;
 		font-size: 10px;
 		font-weight: 600;
-		letter-spacing: 0.05em;
+		letter-spacing: 0.09em;
 		text-transform: uppercase;
 		color: var(--text-muted);
-		padding: 4px 8px;
+		padding: 0 10px 9px;
 	}
 
 	.nav-group-badge {
@@ -1387,13 +1418,14 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: 5px 8px;
-		border-radius: var(--radius-sm);
+		padding: 6px 10px;
+		border-radius: 0;
 		color: var(--text-secondary);
 		font-size: 12px;
 		text-align: left;
 		transition: all var(--duration-fast);
 		width: 100%;
+		min-height: 31px;
 	}
 
 	.nav-item:hover {
@@ -1402,9 +1434,10 @@
 	}
 
 	.nav-item.active {
-		background: var(--accent-subtle);
+		background: rgba(201, 166, 92, 0.09);
 		color: var(--accent-default);
 		font-weight: 600;
+		box-shadow: none;
 	}
 
 	:global(.nav-icon) {
@@ -1426,12 +1459,6 @@
 		color: var(--text-muted);
 	}
 
-	.agent-pill-dot {
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-		flex-shrink: 0;
-	}
 
 	.harness-tag {
 		font-size: 9px;
@@ -1441,9 +1468,9 @@
 	}
 
 	.sidebar-footer {
-		padding: 10px 12px;
+		padding: 14px var(--pad-chrome);
 		border-top: 1px solid var(--border-subtle);
-		background: rgba(0, 0, 0, 0.2);
+		background: transparent;
 	}
 
 	.system-meta {
@@ -1470,7 +1497,7 @@
 	/* 2. MIDDLE LIST PANE */
 	.list-pane {
 		background: var(--bg-panel);
-		border-right: 1px solid var(--border-default);
+		border-right: 1px solid var(--border-subtle);
 		display: flex;
 		flex-direction: column;
 		height: 100%;
@@ -1478,27 +1505,33 @@
 	}
 
 	.pane-header {
-		min-height: 48px;
+		min-height: 66px;
 		padding: 10px var(--pad-chrome);
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		border-bottom: 1px solid var(--border-default);
+		border-bottom: 1px solid var(--border-subtle);
 		background: rgba(255, 255, 255, 0.01);
 	}
 
 	.header-left {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: 10px;
+		min-width: 0;
 	}
 
 	.pane-title {
-		font-size: 13px;
+		font-size: 14px;
 		font-weight: 600;
 		display: flex;
 		align-items: center;
 		gap: 3px;
+		letter-spacing: -0.02em;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.title-prefix {
@@ -1506,9 +1539,12 @@
 	}
 
 	.header-badge {
-		font-size: 11px;
+		font-size: 10px;
 		font-family: var(--font-mono);
 		color: var(--text-muted);
+		padding: 0;
+		background: transparent;
+		border-radius: 0;
 	}
 
 	.btn-icon {
@@ -1518,6 +1554,9 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		width: 30px;
+		height: 30px;
+		border: 1px solid transparent;
 	}
 
 	.btn-icon:hover {
@@ -1536,14 +1575,14 @@
 	.message-row {
 		display: flex;
 		flex-direction: column;
-		gap: 3px;
-		padding: 10px var(--pad-chrome);
+		gap: 7px;
+		padding: 17px var(--pad-chrome);
 		border-bottom: 1px solid var(--border-subtle);
 		cursor: pointer;
 		outline: none;
 		border-radius: 0;
 		transition: background var(--duration-fast), border-left-color var(--duration-fast);
-		border-left: 3px solid transparent;
+		border-left: 2px solid transparent;
 	}
 
 	.message-row:hover {
@@ -1565,27 +1604,27 @@
 
 	@keyframes row-enter {
 		from {
-			opacity: 0;
-			transform: translateY(-8px);
+		opacity: 0;
+		transform: translateY(-8px);
 		}
 		to {
-			opacity: 1;
-			transform: translateY(0);
+		opacity: 1;
+		transform: translateY(0);
 		}
 	}
 
 	@keyframes row-pulse {
 		0% {
-			background: rgba(192, 152, 47, 0.28);
-			border-left-color: var(--accent-default);
+		background: rgba(192, 152, 47, 0.28);
+		border-left-color: var(--accent-default);
 		}
 		40% {
-			background: rgba(192, 152, 47, 0.16);
-			border-left-color: var(--accent-default);
+		background: rgba(192, 152, 47, 0.16);
+		border-left-color: var(--accent-default);
 		}
 		100% {
-			background: transparent;
-			border-left-color: transparent;
+		background: transparent;
+		border-left-color: transparent;
 		}
 	}
 
@@ -1594,25 +1633,35 @@
 		align-items: center;
 		justify-content: space-between;
 		font-size: 11px;
+		gap: 8px;
+		min-width: 0;
 	}
 
 	.row-author-wrap {
 		display: flex;
 		align-items: center;
 		gap: 6px;
+		min-width: 0;
+		overflow: hidden;
 	}
 
 	.row-author-badge {
-		font-family: var(--font-mono);
-		font-weight: 600;
-		padding: 1px 5px;
+		font-family: var(--font-sans);
+		font-weight: 500;
+		padding: 0;
 		border-radius: 3px;
 		font-size: 11px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.row-topic {
 		color: var(--text-muted);
-		font-size: 11px;
+		font-size: 10px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.row-topic.is-direct {
@@ -1622,31 +1671,33 @@
 	.row-time-wrap {
 		display: flex;
 		align-items: center;
-		gap: 6px;
+		gap: 7px;
+		flex-shrink: 0;
 	}
 
 	.row-seq {
-		color: var(--accent-secondary);
-		font-size: 10px;
+		color: var(--text-subtle);
+		font-size: 9px;
 		font-family: var(--font-mono);
 	}
 
 	.row-time {
 		color: var(--text-muted);
-		font-size: 11px;
+		font-size: 10px;
 	}
 
 	.row-title {
-		font-weight: 600;
+		font-weight: 550;
 		font-size: 13px;
 		color: var(--text-primary);
-		line-height: 1.35;
+		line-height: 1.5;
+		letter-spacing: -0.015em;
 	}
 
 	.row-snippet {
-		font-size: 11.5px;
-		color: var(--text-secondary);
-		line-height: 1.35;
+		font-size: 12px;
+		color: var(--text-muted);
+		line-height: 1.6;
 		display: -webkit-box;
 		-webkit-line-clamp: 2;
 		line-clamp: 2;
@@ -1658,7 +1709,7 @@
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		margin-top: 2px;
+		margin-top: 1px;
 	}
 
 	.tag-reply {
@@ -1667,9 +1718,9 @@
 		gap: 3px;
 		font-size: 10px;
 		color: var(--accent-default);
-		background: var(--accent-subtle);
-		border: 1px solid rgba(192, 152, 47, 0.25);
-		padding: 1px 5px;
+		background: transparent;
+		border: none;
+		padding: 0;
 		border-radius: 3px;
 	}
 
@@ -1677,8 +1728,8 @@
 		font-size: 10px;
 		color: var(--accent-secondary);
 		background: rgba(74, 143, 143, 0.12);
-		border: 1px solid rgba(74, 143, 143, 0.25);
-		padding: 1px 5px;
+		border: none;
+		padding: 2px 6px;
 		border-radius: 3px;
 	}
 
@@ -1717,19 +1768,22 @@
 	}
 
 	.detail-topbar {
-		min-height: 48px;
+		min-height: 66px;
 		padding: 10px var(--pad-detail);
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		border-bottom: 1px solid var(--border-default);
-		background: rgba(0, 0, 0, 0.15);
+		border-bottom: 1px solid var(--border-subtle);
+		background: transparent;
 	}
 
 	.detail-top-left {
 		display: flex;
 		align-items: center;
 		gap: 8px;
+		width: 100%;
+		min-width: 0;
+		flex-wrap: wrap;
 	}
 
 	.detail-topic-badge {
@@ -1739,8 +1793,8 @@
 		font-size: 11px;
 		font-weight: 500;
 		color: var(--text-secondary);
-		background: rgba(255, 255, 255, 0.06);
-		padding: 2px 7px;
+		background: rgba(255, 255, 255, 0.035);
+		padding: 4px 8px;
 		border-radius: var(--radius-sm);
 	}
 
@@ -1748,8 +1802,8 @@
 		font-size: 11px;
 		font-family: var(--font-mono);
 		color: var(--accent-secondary);
-		background: rgba(74, 143, 143, 0.12);
-		border: 1px solid rgba(74, 143, 143, 0.25);
+		background: transparent;
+		border: none;
 		padding: 1px 6px;
 		border-radius: var(--radius-sm);
 	}
@@ -1783,56 +1837,54 @@
 	.detail-scroll {
 		flex: 1;
 		overflow-y: auto;
-		padding: 20px var(--pad-detail);
+		padding: 32px var(--pad-detail) 40px;
 		display: flex;
 		flex-direction: column;
-		gap: 20px;
+		gap: 26px;
 	}
 
 	.message-header-box {
 		display: flex;
-		flex-direction: column;
-		gap: 14px;
+		align-items: stretch;
+		gap: 22px;
 		border-bottom: 1px solid var(--border-subtle);
-		padding-bottom: 16px;
+		padding-bottom: 25px;
 	}
 
 	.detail-title {
-		font-size: 18px;
+		font-size: clamp(21px, 1.8vw, 28px);
 		font-weight: 600;
 		color: var(--text-primary);
-		letter-spacing: -0.01em;
+		letter-spacing: -0.035em;
 		line-height: 1.3;
+		text-wrap: balance;
+		overflow-wrap: anywhere;
 	}
 
-	.author-card {
+	.message-header-copy {
 		display: flex;
-		align-items: center;
-		gap: 10px;
+		flex-direction: column;
+		justify-content: space-between;
+		gap: 18px;
+		min-height: 99px;
+		min-width: 0;
+		flex: 1;
+		padding: 2px 0;
 	}
 
-	.author-avatar {
-		width: 32px;
-		height: 32px;
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-weight: 600;
-		font-size: 13px;
-		flex-shrink: 0;
-	}
 
 	.author-details {
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
+		gap: 5px;
+		min-width: 0;
 	}
 
 	.author-line-1 {
 		display: flex;
 		align-items: center;
 		gap: 6px;
+		flex-wrap: wrap;
 	}
 
 	.author-handle {
@@ -1854,14 +1906,18 @@
 	}
 
 	.author-line-2 {
-		font-size: 11px;
+		font-size: 10px;
 		color: var(--text-muted);
 		display: flex;
 		align-items: center;
 		gap: 6px;
+		font-family: var(--font-sans);
+		flex-wrap: wrap;
 	}
 
 	.message-body-box {
+		max-width: 92ch;
+		font-size: 14px;
 		line-height: 1.6;
 	}
 
@@ -1899,10 +1955,10 @@
 	.thread-item {
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
+		gap: 8px;
 		position: relative;
-		padding: 8px 12px;
-		border-radius: var(--radius-sm);
+		padding: 14px 16px;
+		border-radius: var(--radius-md);
 		background: rgba(255, 255, 255, 0.02);
 		border: 1px solid var(--border-subtle);
 	}
@@ -1919,7 +1975,7 @@
 
 	.thread-item.current {
 		background: var(--accent-subtle);
-		border-color: var(--accent-default);
+		border-color: rgba(201, 166, 92, 0.3);
 	}
 
 	.thread-item-dot {
@@ -1937,6 +1993,8 @@
 		align-items: center;
 		gap: 8px;
 		font-size: 11px;
+		flex-wrap: wrap;
+		margin-bottom: 8px;
 	}
 
 	.thread-author {
@@ -1955,14 +2013,14 @@
 	}
 
 	.thread-body {
-		font-size: 12.5px;
+		font-size: 13px;
 	}
 
 	/* Quick Reply Bar */
 	.detail-reply-bar {
-		padding: 12px var(--pad-detail);
-		border-top: 1px solid var(--border-default);
-		background: rgba(0, 0, 0, 0.2);
+		padding: 14px var(--pad-detail) 18px;
+		border-top: 1px solid var(--border-subtle);
+		background: var(--bg-detail);
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
@@ -1971,7 +2029,7 @@
 	.reply-meta-row {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: 10px;
 		font-size: 11px;
 	}
 
@@ -1980,56 +2038,71 @@
 	}
 
 	.reply-author-select {
-		background: var(--input-bg);
-		border: 1px solid var(--border-default);
-		border-radius: var(--radius-sm);
-		height: 32px;
-		padding: 4px 8px;
-		font-size: 12px;
+		background: var(--select-chevron) no-repeat right 4px center / 16px, transparent;
+		border: none;
+		border-radius: 0;
+		height: 27px;
+		padding: 3px 28px 3px 5px;
+		font-size: 11px;
 		color: var(--text-primary);
 		outline: none;
 		transition: border-color var(--duration-fast), box-shadow var(--duration-fast),
 			background var(--duration-fast);
+		max-width: 55%;
+		background-color: #202529;
+		border-bottom: 1px solid var(--border-default);
 	}
 
 	.reply-author-select:focus {
 		border-color: var(--accent-default);
-		background: var(--input-bg-focus);
-		box-shadow: var(--focus-ring);
+		background-color: transparent;
+		box-shadow: 0 1px 0 var(--accent-default);
 	}
 
 	.reply-shortcut-hint {
 		margin-left: auto;
 		color: var(--text-muted);
 		font-size: 10px;
-		font-family: var(--font-mono);
+		font-family: var(--font-sans);
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
 	}
 
 	.reply-input-wrap {
 		display: flex;
-		gap: 8px;
+		gap: 6px;
 		align-items: stretch;
+		border: none;
+		border-radius: 0;
+		background: transparent;
+		padding: 0;
+		transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
+		border-top: 1px solid var(--border-default);
+		border-bottom: 1px solid var(--border-default);
 	}
 
 	.reply-textarea {
 		flex: 1;
-		min-height: 60px;
-		background: var(--input-bg);
-		border: 1px solid var(--border-default);
-		border-radius: var(--radius-sm);
-		padding: var(--input-padding);
-		font-size: 12.5px;
+		min-height: 64px;
+		background: transparent;
+		border: none;
+		border-radius: 0;
+		padding: 9px 0;
+		font-size: 13px;
 		color: var(--text-primary);
 		outline: none;
 		resize: none;
 		transition: border-color var(--duration-fast), box-shadow var(--duration-fast),
 			background var(--duration-fast);
+		min-width: 0;
+		line-height: 1.65;
 	}
 
 	.reply-textarea:focus {
 		border-color: var(--accent-default);
-		background: var(--input-bg-focus);
-		box-shadow: var(--focus-ring);
+		background: transparent;
+		box-shadow: none;
 	}
 
 	.btn-send-reply {
@@ -2037,22 +2110,31 @@
 		align-items: center;
 		justify-content: center;
 		gap: 5px;
-		background: var(--accent-default);
-		color: var(--text-on-accent);
-		border-radius: var(--radius-sm);
-		padding: 8px 14px;
+		background: transparent;
+		color: var(--accent-default);
+		border-radius: 0;
+		padding: 5px 9px;
 		font-size: 12px;
-		font-weight: 600;
+		font-weight: 500;
 		transition: background var(--duration-fast);
+		align-self: flex-end;
+		height: 28px;
+		margin: 0 0 8px;
+		border: 1px solid #827251;
+		box-shadow: none;
 	}
 
 	.btn-send-reply:hover:not(:disabled) {
-		background: var(--accent-hover);
+		background: var(--accent-subtle);
 	}
 
 	.btn-send-reply:disabled {
-		opacity: 0.5;
+		opacity: 1;
 		cursor: not-allowed;
+		background: transparent;
+		color: var(--text-subtle);
+		box-shadow: none;
+		border-color: var(--border-default);
 	}
 
 	.detail-empty {
@@ -2123,147 +2205,171 @@
 	.modal-backdrop {
 		position: fixed;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.7);
-		backdrop-filter: blur(4px);
+		background: rgba(5, 8, 10, 0.74);
+		backdrop-filter: blur(8px);
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		z-index: 100;
 		animation: backdrop-in var(--duration-normal) var(--ease-out);
+		padding: 24px;
 	}
 
 	.modal-panel {
 		background: var(--bg-detail);
-		border: 1px solid var(--border-strong);
-		border-radius: var(--radius-md);
-		width: 520px;
-		max-width: 90vw;
-		box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
+		border: 1px solid #434a50;
+		border-radius: 2px;
+		width: 560px;
+		max-width: 100%;
+		box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
 		animation: modal-in var(--duration-normal) var(--ease-out);
+		max-height: calc(100dvh - 48px);
 	}
 
 	@keyframes backdrop-in {
 		from {
-			opacity: 0;
+		opacity: 0;
 		}
 		to {
-			opacity: 1;
+		opacity: 1;
 		}
 	}
 
 	@keyframes modal-in {
 		from {
-			opacity: 0;
-			transform: translateY(6px) scale(0.99);
+		opacity: 0;
+		transform: translateY(6px) scale(0.99);
 		}
 		to {
-			opacity: 1;
-			transform: none;
+		opacity: 1;
+		transform: none;
 		}
 	}
 
 	.modal-header {
-		padding: 12px 16px;
+		padding: 21px 24px 18px;
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		justify-content: space-between;
-		border-bottom: 1px solid var(--border-default);
+		border-bottom: none;
 	}
 
 	.modal-header h3 {
-		font-size: 14px;
+		font-size: 20px;
 		font-weight: 600;
+		letter-spacing: -0.035em;
 	}
 
 	.modal-body {
-		padding: 16px;
+		padding: 0 24px 22px;
 		display: flex;
 		flex-direction: column;
-		gap: 14px;
+		gap: 17px;
+		overflow-y: auto;
 	}
 
 	.modal-tabs {
 		display: flex;
-		gap: 6px;
-		background: rgba(0, 0, 0, 0.25);
-		padding: 3px;
-		border-radius: var(--radius-sm);
-		border: 1px solid var(--border-subtle);
+		gap: 20px;
+		background: transparent;
+		padding: 0;
+		border-radius: 0;
+		border: none;
+		margin-bottom: 2px;
+		border-bottom: 1px solid var(--border-default);
 	}
 
 	.modal-tab {
-		flex: 1;
+		flex: initial;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		gap: 6px;
-		padding: 6px;
+		padding: 7px 0 10px;
 		font-size: 12px;
 		color: var(--text-secondary);
-		border-radius: 3px;
+		border-radius: 0;
 		transition: all var(--duration-fast);
+		border: none;
+		border-bottom: 1px solid transparent;
 	}
 
 	.modal-tab.active {
-		background: var(--accent-subtle);
+		background: transparent;
 		color: var(--accent-default);
-		font-weight: 600;
-		border: 1px solid rgba(192, 152, 47, 0.3);
+		font-weight: 500;
+		border: none;
+		box-shadow: none;
+		border-bottom: 1px solid var(--accent-default);
 	}
 
 	.modal-field {
 		display: flex;
 		flex-direction: column;
-		gap: 5px;
+		gap: 6px;
+		min-width: 0;
 	}
 
 	.modal-field label {
-		font-size: 11px;
+		font-size: 12px;
 		font-weight: 500;
-		color: var(--text-secondary);
+		color: var(--text-primary);
+		display: flex;
+		justify-content: space-between;
+		gap: 8px;
 	}
 
 	.form-input {
-		background: var(--input-bg);
-		border: 1px solid var(--border-default);
-		border-radius: var(--radius-sm);
-		padding: var(--input-padding);
-		font-size: 12.5px;
+		background: transparent;
+		border: none;
+		border-radius: 0;
+		padding: 7px 0;
+		font-size: 12px;
 		color: var(--text-primary);
 		outline: none;
 		transition: border-color var(--duration-fast), box-shadow var(--duration-fast),
 			background var(--duration-fast);
+		min-height: 35px;
+		width: 100%;
+		box-shadow: none;
+		border-bottom: 1px solid var(--border-default);
 	}
 
 	.form-input:focus {
 		border-color: var(--accent-default);
-		background: var(--input-bg-focus);
-		box-shadow: var(--focus-ring);
+		background-color: transparent;
+		box-shadow: 0 1px 0 var(--accent-default);
 	}
 
 	.form-textarea {
 		resize: vertical;
-		line-height: 1.5;
+		line-height: 1.7;
+		min-height: 145px;
+		border: 1px solid var(--border-default);
+		padding: 10px;
+		font-size: 13px;
 	}
 
 	.modal-footer {
-		padding: 12px 16px;
+		padding: 14px 24px;
 		display: flex;
 		align-items: center;
 		justify-content: flex-end;
-		gap: 8px;
-		border-top: 1px solid var(--border-default);
-		background: rgba(0, 0, 0, 0.15);
+		gap: 10px;
+		border-top: 1px solid var(--border-subtle);
+		background: transparent;
 	}
 
 	.btn-cancel {
-		padding: 6px 12px;
+		padding: 6px 10px;
 		font-size: 12px;
-		color: var(--text-secondary);
-		border-radius: var(--radius-sm);
+		color: var(--text-primary);
+		border-radius: 0;
+		border: 1px solid transparent;
+		background: transparent;
 	}
 
 	.btn-cancel:hover {
@@ -2273,23 +2379,29 @@
 	.btn-submit {
 		display: inline-flex;
 		align-items: center;
-		gap: 6px;
-		background: var(--accent-default);
-		color: var(--text-on-accent);
-		border-radius: var(--radius-sm);
-		padding: 6px 14px;
+		gap: 8px;
+		background: transparent;
+		color: var(--accent-default);
+		border-radius: 0;
+		padding: 7px 12px;
 		font-size: 12px;
-		font-weight: 600;
+		font-weight: 500;
 		transition: background var(--duration-fast);
+		box-shadow: none;
+		border: 1px solid #827251;
 	}
 
 	.btn-submit:hover:not(:disabled) {
-		background: var(--accent-hover);
+		background: var(--accent-subtle);
 	}
 
 	.btn-submit:disabled {
-		opacity: 0.5;
+		opacity: 1;
 		cursor: not-allowed;
+		background: transparent;
+		color: var(--text-subtle);
+		box-shadow: none;
+		border-color: var(--border-default);
 	}
 
 	/* Helpers */
@@ -2309,10 +2421,37 @@
 
 	@keyframes spin {
 		from {
-			transform: rotate(0deg);
+		transform: rotate(0deg);
 		}
 		to {
-			transform: rotate(360deg);
+		transform: rotate(360deg);
 		}
+	}
+
+	.compose-key { margin-left: auto; background: transparent; border-color: rgba(201, 166, 92, 0.22); color: inherit; font-size: 9px; }
+	.row-footer:empty { display: none; }
+	.message-row:focus-visible { outline: 2px solid var(--accent-default); outline-offset: -3px; }
+	.btn-copy-body { margin-left: auto; flex-shrink: 0; }
+	.btn-copy-id { min-width: 0; max-width: 200px; }
+	.btn-copy-id span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.reply-input-wrap:focus-within { border-bottom-color: var(--accent-default); box-shadow: 0 1px 0 var(--accent-default); }
+	.modal-description { margin-top: 5px; font-size: 12px; color: var(--text-muted); }
+	.modal-routing { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+	.field-hint { color: var(--text-muted); font-size: 11px; font-weight: 400; }
+	select.form-input { background: var(--select-chevron) no-repeat right 0 center / 16px, transparent; padding-right: 26px; }
+	select.form-input:focus { background-color: transparent; }
+	.form-input:hover:not(:focus), .reply-author-select:hover:not(:focus), .search-input:hover:not(:focus) { border-color: var(--border-strong); }
+	.modal-tab:hover:not(.active) { color: var(--text-primary); background: rgba(255, 255, 255, 0.03); }
+	.btn-cancel:hover { background: transparent; border-color: var(--border-default); }
+	@media (max-width: 1100px) {
+		.detail-topbar { padding-inline: 20px; }
+		.detail-scroll, .detail-reply-bar { padding-inline: 24px; }
+		.author-name, .reply-shortcut-hint { display: none; }
+		.row-seq { display: none; }
+	}
+	@media (max-height: 760px) {
+		.modal-header { padding-top: 18px; padding-bottom: 16px; }
+		.modal-body { gap: 14px; padding-bottom: 18px; }
+		.form-textarea { min-height: 120px; }
 	}
 </style>

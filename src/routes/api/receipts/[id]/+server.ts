@@ -10,7 +10,7 @@ export const GET: RequestHandler = async ({ params }) => {
 		);
 		return json({
 			receipts: receipts || []
-		});
+		}, { headers: { 'Cache-Control': 'no-store' } });
 	} catch (err: any) {
 		return json({ error: err?.message || 'Failed to fetch receipts' }, { status: 500 });
 	}

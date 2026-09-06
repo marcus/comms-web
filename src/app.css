@@ -1,29 +1,29 @@
 :root {
-	/* Sidecar Modern Palette */
-	--bg-app: #0f1113;
-	--bg-sidebar: #131619;
-	--bg-panel: #0f1113;
-	--bg-detail: #131619;
-	--bg-elevated: #22272c;
-	--bg-hover: #171b1f;
-	--bg-active: rgba(192, 152, 47, 0.12);
+	/* Quiet charcoal surfaces with a warm brass accent. */
+	--bg-app: #101214;
+	--bg-sidebar: #141719;
+	--bg-panel: #111416;
+	--bg-detail: #181b1e;
+	--bg-elevated: #252a2e;
+	--bg-hover: #202428;
+	--bg-active: rgba(204, 171, 98, 0.085);
 	--bg-selection: #264f78;
 
-	--border-subtle: #272d32;
-	--border-default: #3d444a;
-	--border-strong: #4d555c;
-	--border-accent: #c0982f;
+	--border-subtle: rgba(215, 224, 231, 0.075);
+	--border-default: #343a3f;
+	--border-strong: #485057;
+	--border-accent: #c9a65c;
 
-	--text-primary: #cfd3d6;
-	--text-secondary: #8b9298;
-	--text-muted: #858e95;
-	--text-subtle: #697177;
+	--text-primary: #e0e3e5;
+	--text-secondary: #a1a8ae;
+	--text-muted: #89929a;
+	--text-subtle: #6f7880;
 	--text-selection: #ffffff;
 	--text-on-accent: #0f1113;
 
-	--accent-default: #c0982f;
-	--accent-hover: #d4a938;
-	--accent-subtle: rgba(192, 152, 47, 0.14);
+	--accent-default: #c9a65c;
+	--accent-hover: #ddbb75;
+	--accent-subtle: rgba(201, 166, 92, 0.11);
 	--accent-secondary: #4a8f8f;
 
 	--success: #5b8f63;
@@ -53,20 +53,21 @@
 	--font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-	--radius-sm: 3px;
-	--radius-md: 6px;
-	--radius-lg: 8px;
+	--radius-sm: 2px;
+	--radius-md: 3px;
+	--radius-lg: 4px;
 	--radius-full: 9999px;
 
-	/* Shared chrome rhythm: pane headers align on 12px, detail column on 20px */
-	--pad-chrome: 12px;
-	--pad-detail: 20px;
+	/* Shared pane rhythm, with a more generous reading column. */
+	--pad-chrome: 18px;
+	--pad-detail: clamp(24px, 3vw, 48px);
 
 	/* Consistent form controls */
-	--input-bg: rgba(255, 255, 255, 0.04);
-	--input-bg-focus: rgba(255, 255, 255, 0.06);
-	--input-padding: 7px 10px;
-	--focus-ring: 0 0 0 2px rgba(192, 152, 47, 0.28);
+	--select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m5 6 3 3 3-3' fill='none' stroke='%23949da5' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+	--input-bg: #121517;
+	--input-bg-focus: #171b1e;
+	--input-padding: 11px 13px;
+	--focus-ring: 0 0 0 3px rgba(201, 166, 92, 0.13);
 
 	--duration-fast: 150ms;
 	--duration-normal: 200ms;
@@ -87,6 +88,8 @@ html, body {
 	font-family: var(--font-sans);
 	font-size: 13px;
 	line-height: 1.5;
+	color-scheme: dark;
+	font-feature-settings: "cv11", "ss01";
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
 	overflow: hidden;
@@ -98,14 +101,14 @@ html, body {
 	height: 6px;
 }
 ::-webkit-scrollbar-track {
-	background: #1c2126;
+	background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-	background: #5a6167;
+	background: #394147;
 	border-radius: var(--radius-full);
 }
 ::-webkit-scrollbar-thumb:hover {
-	background: #858e95;
+	background: #556169;
 }
 
 input, textarea, button, select {
@@ -146,13 +149,14 @@ select option {
 /* Markdown typography */
 .prose {
 	color: var(--text-primary);
-	line-height: 1.65;
-	font-size: 13px;
+	line-height: 1.8;
+	font-size: 14px;
+	overflow-wrap: anywhere;
 }
 .prose h1, .prose h2, .prose h3, .prose h4 {
 	color: var(--text-primary);
 	font-weight: 600;
-	margin-top: 1.25em;
+	margin-top: 1.6em;
 	margin-bottom: 0.5em;
 	line-height: 1.3;
 }
@@ -172,10 +176,10 @@ select option {
 	margin-bottom: 0.25em;
 }
 .prose pre {
-	background: #090a0d;
+	background: #111416;
 	border: 1px solid var(--border-default);
-	border-radius: var(--radius-sm);
-	padding: 10px 14px;
+	border-radius: var(--radius-md);
+	padding: 16px 18px;
 	overflow-x: auto;
 	margin: 0.8em 0;
 	font-family: var(--font-mono);
@@ -208,3 +212,18 @@ select option {
 	text-decoration: underline;
 	text-underline-offset: 2px;
 }
+
+input::placeholder, textarea::placeholder { color: var(--text-subtle); opacity: 1; }
+select {
+	appearance: none;
+	background-image: var(--select-chevron);
+	background-repeat: no-repeat;
+	background-position: right 12px center;
+}
+::selection { background: rgba(201, 166, 92, 0.27); color: #fff; }
+.prose > :first-child { margin-top: 0; }
+.prose > :last-child { margin-bottom: 0; }
+.prose hr { border: 0; border-top: 1px solid var(--border-default); margin: 24px 0; }
+.prose table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 13px; }
+.prose th, .prose td { padding: 9px 12px; border-bottom: 1px solid var(--border-default); text-align: left; }
+.prose th { color: var(--text-secondary); font-weight: 500; }
