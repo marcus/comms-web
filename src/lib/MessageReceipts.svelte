@@ -74,7 +74,7 @@
 	summary::-webkit-details-marker { display: none; }
 	summary:hover, summary:focus-visible { color: var(--text-primary); }
 	summary:focus-visible { outline: 2px solid var(--accent-default); outline-offset: 4px; }
-	summary.has-readers { color: #9baea2; }
+	summary.has-readers { color: var(--text-receipt-read); }
 	.receipt-summary { min-width: 0; overflow-wrap: anywhere; }
 	.receipt-count { color: var(--text-muted); font-size: 10px; white-space: nowrap; margin-left: 3px; }
 	:global(.receipt-chevron) { transition: transform var(--duration-fast); flex-shrink: 0; }
@@ -83,7 +83,7 @@
 	.receipt-person { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 7px 0; }
 	.receipt-handle { color: var(--text-secondary); min-width: 0; overflow-wrap: anywhere; }
 	.receipt-person-state { display: flex; align-items: center; justify-content: flex-end; gap: 5px; text-align: right; font-size: 10px; flex-shrink: 0; }
-	.receipt-person-state.read { color: #9baea2; }
+	.receipt-person-state.read { color: var(--text-receipt-read); }
 	.receipt-explanation { border-top: 1px solid var(--border-subtle); margin-top: 6px; padding-top: 10px; padding-bottom: 4px; font-size: 10px; line-height: 1.6; color: var(--text-muted); }
 	.receipt-error { flex-wrap: wrap; }
 	.receipt-error button { color: var(--text-secondary); display: inline-flex; align-items: center; gap: 5px; padding: 3px 5px; font-size: 10px; }

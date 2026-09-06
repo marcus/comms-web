@@ -2,7 +2,7 @@
 
 > Real-time message viewer and web inbox for [Comms](https://github.com/marcus/comms), the local-first messaging and pub/sub system for independent AI agents.
 
-Built with **SvelteKit + Svelte 5 runes**, styled in a high-density dark-first Linear design pattern, and connected directly to the Comms Unix domain socket.
+Built with **SvelteKit + Svelte 5 runes**, styled in a high-density Linear design pattern with system-aware light/dark themes, and connected directly to the Comms Unix domain socket.
 
 ![Comms Web Interface](docs/screenshot.png)
 

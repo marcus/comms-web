@@ -2,6 +2,7 @@
 	import { onMount, tick } from 'svelte';
 	import MessageReceipts from '$lib/MessageReceipts.svelte';
 	import AgentPortrait from '$lib/AgentPortrait.svelte';
+	import ThemeToggle from '$lib/ThemeToggle.svelte';
 	import {
 		MessageSquare,
 		Hash,
@@ -772,6 +773,7 @@
 				<button class="btn-icon" onclick={() => loadData(true)} title="Refresh messages" aria-label="Refresh messages">
 					<RefreshCw size={13} class={isRefreshing ? 'spin' : ''} />
 				</button>
+				<ThemeToggle />
 			</div>
 		</header>
 
@@ -1365,7 +1367,7 @@
 		justify-content: flex-start;
 		gap: 9px;
 		background: transparent;
-		border: 1px solid #6d60454d;
+		border: 1px solid var(--border-accent-faint);
 		border-radius: 0;
 		color: var(--accent-default);
 		padding: 5px 8px;
@@ -1378,7 +1380,7 @@
 
 	.btn-compose:hover {
 		background: var(--accent-subtle);
-		border-color: #827251;
+		border-color: var(--border-accent-muted);
 		color: var(--accent-hover);
 	}
 
@@ -1511,7 +1513,7 @@
 		align-items: center;
 		justify-content: space-between;
 		border-bottom: 1px solid var(--border-subtle);
-		background: rgba(255, 255, 255, 0.01);
+		background: var(--bg-ghost);
 	}
 
 	.header-left {
@@ -1547,16 +1549,25 @@
 		border-radius: 0;
 	}
 
+	.header-right {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		flex-shrink: 0;
+	}
+
 	.btn-icon {
 		padding: 4px;
 		color: var(--text-secondary);
 		border-radius: var(--radius-sm);
-		display: flex;
+		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		width: 30px;
 		height: 30px;
 		border: 1px solid transparent;
+		flex-shrink: 0;
+		line-height: 0;
 	}
 
 	.btn-icon:hover {
@@ -1793,7 +1804,7 @@
 		font-size: 11px;
 		font-weight: 500;
 		color: var(--text-secondary);
-		background: rgba(255, 255, 255, 0.035);
+		background: var(--bg-ghost);
 		padding: 4px 8px;
 		border-radius: var(--radius-sm);
 	}
@@ -1959,7 +1970,7 @@
 		position: relative;
 		padding: 14px 16px;
 		border-radius: var(--radius-md);
-		background: rgba(255, 255, 255, 0.02);
+		background: var(--bg-ghost);
 		border: 1px solid var(--border-subtle);
 	}
 
@@ -1969,7 +1980,7 @@
 	}
 
 	.thread-item:not(.current):hover {
-		background: rgba(255, 255, 255, 0.05);
+		background: var(--bg-ghost-strong);
 		border-color: var(--border-default);
 	}
 
@@ -2049,7 +2060,7 @@
 		transition: border-color var(--duration-fast), box-shadow var(--duration-fast),
 			background var(--duration-fast);
 		max-width: 55%;
-		background-color: #202529;
+		background-color: var(--bg-elevated);
 		border-bottom: 1px solid var(--border-default);
 	}
 
@@ -2120,7 +2131,7 @@
 		align-self: flex-end;
 		height: 28px;
 		margin: 0 0 8px;
-		border: 1px solid #827251;
+		border: 1px solid var(--border-accent-muted);
 		box-shadow: none;
 	}
 
@@ -2184,7 +2195,7 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 5px;
-		background: rgba(255, 255, 255, 0.04);
+		background: var(--bg-ghost);
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-sm);
 		padding: 3px 7px;
@@ -2205,7 +2216,7 @@
 	.modal-backdrop {
 		position: fixed;
 		inset: 0;
-		background: rgba(5, 8, 10, 0.74);
+		background: var(--bg-overlay);
 		backdrop-filter: blur(8px);
 		display: flex;
 		align-items: center;
@@ -2217,11 +2228,11 @@
 
 	.modal-panel {
 		background: var(--bg-detail);
-		border: 1px solid #434a50;
+		border: 1px solid var(--border-modal);
 		border-radius: 2px;
 		width: 560px;
 		max-width: 100%;
-		box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+		box-shadow: var(--shadow-modal);
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
@@ -2388,7 +2399,7 @@
 		font-weight: 500;
 		transition: background var(--duration-fast);
 		box-shadow: none;
-		border: 1px solid #827251;
+		border: 1px solid var(--border-accent-muted);
 	}
 
 	.btn-submit:hover:not(:disabled) {
@@ -2441,7 +2452,7 @@
 	select.form-input { background: var(--select-chevron) no-repeat right 0 center / 16px, transparent; padding-right: 26px; }
 	select.form-input:focus { background-color: transparent; }
 	.form-input:hover:not(:focus), .reply-author-select:hover:not(:focus), .search-input:hover:not(:focus) { border-color: var(--border-strong); }
-	.modal-tab:hover:not(.active) { color: var(--text-primary); background: rgba(255, 255, 255, 0.03); }
+	.modal-tab:hover:not(.active) { color: var(--text-primary); background: var(--bg-ghost); }
 	.btn-cancel:hover { background: transparent; border-color: var(--border-default); }
 	@media (max-width: 1100px) {
 		.detail-topbar { padding-inline: 20px; }

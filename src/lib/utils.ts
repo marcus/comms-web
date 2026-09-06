@@ -47,7 +47,7 @@ const HANDLE_COLORS = [
 ];
 
 export function getHandleColor(handle?: string): { color: string; bg: string } {
-	if (!handle) return { color: 'var(--text-secondary)', bg: 'rgba(255, 255, 255, 0.06)' };
+	if (!handle) return { color: 'var(--text-secondary)', bg: 'var(--bg-ghost-strong)' };
 	let hash = 0;
 	for (let i = 0; i < handle.length; i++) {
 		hash = (hash * 31 + handle.charCodeAt(i)) >>> 0;
@@ -74,6 +74,6 @@ export function getHarnessStyle(harness?: string): { color: string; bg: string }
 		case 'muse':
 			return { color: 'var(--harness-muse)', bg: 'var(--harness-muse-bg)' };
 		default:
-			return { color: 'var(--text-secondary)', bg: 'rgba(255, 255, 255, 0.06)' };
+			return { color: 'var(--text-secondary)', bg: 'var(--bg-ghost-strong)' };
 	}
 }
