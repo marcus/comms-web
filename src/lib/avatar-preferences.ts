@@ -5,6 +5,12 @@ export interface AvatarRecipe {
 	inputs?: AvatarInputs;
 }
 
+export function recipeForScope(records: AvatarPreferenceRecord[], scope: AvatarPreferenceScope, agentId: string, sessionRef?: string): AvatarRecipe {
+	if (scope === 'default') return resolveAvatarRecipe(records, '', undefined).recipe;
+	if (scope === 'agent') return resolveAvatarRecipe(records, agentId, undefined).recipe;
+	return resolveAvatarRecipe(records, agentId, sessionRef).recipe;
+}
+
 export type AvatarPreferenceScope = 'default' | 'agent' | 'session';
 
 export interface AvatarPreferenceRecord {

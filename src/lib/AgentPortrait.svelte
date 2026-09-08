@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { avatarRevision } from './avatar-revision.svelte';
 	let { agentId, sessionRef, size = 24, fillHeader = false }: { agentId: string; sessionRef?: string; size?: number; fillHeader?: boolean } = $props();
-	const portrait = $derived(`/api/avatars/image?agent_id=${encodeURIComponent(agentId)}${sessionRef ? `&session_ref=${encodeURIComponent(sessionRef)}` : ''}`);
+	const portrait = $derived(`/api/avatars/image?agent_id=${encodeURIComponent(agentId)}${sessionRef ? `&session_ref=${encodeURIComponent(sessionRef)}` : ''}&v=${avatarRevision.value}`);
 </script>
 
 <span class="agent-portrait" class:fill-header={fillHeader} style:width={`${size}px`} style:height={`${size}px`} aria-hidden="true">

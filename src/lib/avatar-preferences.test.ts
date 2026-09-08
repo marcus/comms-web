@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveAvatarRecipe, type AvatarPreferenceRecord } from './avatar-preferences.ts';
+import { recipeForScope, resolveAvatarRecipe, type AvatarPreferenceRecord } from './avatar-preferences.ts';
 
 const at = '2026-09-07T00:00:00Z';
 const records: AvatarPreferenceRecord[] = [
@@ -13,6 +13,11 @@ test('resolves session over agent over default', () => {
 	assert.equal(resolveAvatarRecipe(records, 'agent-a', 'same-session').source, 'session');
 	assert.equal(resolveAvatarRecipe(records, 'agent-a').source, 'agent');
 	assert.equal(resolveAvatarRecipe(records, 'agent-b').source, 'default');
+});
+
+test('changing edit scope loads that scope rather than promoting a session recipe', () => {
+	assert.equal(recipeForScope(records, 'default', 'agent-a', 'same-session').style, 'gorey');
+	assert.equal(recipeForScope(records, 'agent', 'agent-a', 'same-session').style, 'pebble');
 });
 
 test('session identity includes the agent identity', () => {

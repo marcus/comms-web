@@ -771,6 +771,7 @@
 				<span class="header-badge">{filteredMessages.length}</span>
 			</div>
 			<div class="header-right">
+				<AvatarPicker agentId="global-preview" size={24} defaultOnly />
 				<button class="btn-icon" onclick={() => loadData(true)} title="Refresh messages" aria-label="Refresh messages">
 					<RefreshCw size={13} class={isRefreshing ? 'spin' : ''} />
 				</button>
