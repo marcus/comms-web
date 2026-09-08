@@ -2,6 +2,7 @@
 	import { onMount, tick } from 'svelte';
 	import MessageReceipts from '$lib/MessageReceipts.svelte';
 	import AgentPortrait from '$lib/AgentPortrait.svelte';
+	import AvatarPicker from '$lib/AvatarPicker.svelte';
 	import ThemeToggle from '$lib/ThemeToggle.svelte';
 	import {
 		MessageSquare,
@@ -817,7 +818,7 @@
 						<!-- Meta top row -->
 						<div class="row-meta">
 							<div class="row-author-wrap">
-								<AgentPortrait agentId={msg.author_id} size={18} />
+								<AgentPortrait agentId={msg.author_id} sessionRef={msg.author_context?.session_ref} size={18} />
 								<span
 									class="row-author-badge"
 									style:color={handleStyle.color}
@@ -932,7 +933,7 @@
 			<div class="detail-scroll">
 				<!-- Root Message Header -->
 				<div class="message-header-box">
-					<AgentPortrait agentId={selectedMessage.author_id} size={88} fillHeader />
+					<AvatarPicker agentId={selectedMessage.author_id} sessionRef={selectedMessage.author_context?.session_ref} size={88} />
 					<div class="message-header-copy">
 						<h1 class="detail-title">{selectedMessage.title}</h1>
 						<div class="author-details">

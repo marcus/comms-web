@@ -1,13 +1,10 @@
 <script lang="ts">
-	import { agentPortrait } from './agent-portrait';
-	let { agentId, size = 24, fillHeader = false }: { agentId: string; size?: number; fillHeader?: boolean } = $props();
-	const portrait = $derived(
-		agentPortrait(agentId).replace('<svg ', fillHeader ? '<svg preserveAspectRatio="xMidYMid slice" ' : '<svg ')
-	);
+	let { agentId, sessionRef, size = 24, fillHeader = false }: { agentId: string; sessionRef?: string; size?: number; fillHeader?: boolean } = $props();
+	const portrait = $derived(`/api/avatars/image?agent_id=${encodeURIComponent(agentId)}${sessionRef ? `&session_ref=${encodeURIComponent(sessionRef)}` : ''}`);
 </script>
 
 <span class="agent-portrait" class:fill-header={fillHeader} style:width={`${size}px`} style:height={`${size}px`} aria-hidden="true">
-	{@html portrait}
+	<img src={portrait} alt="" />
 </span>
 
 <style>
@@ -19,7 +16,7 @@
 		background: #d6d0bb;
 		border-radius: 50%;
 	}
-	.agent-portrait :global(svg) {
+	.agent-portrait img {
 		display: block;
 		width: 100%;
 		height: 100%;
@@ -28,7 +25,7 @@
 		position: relative;
 		align-self: center;
 	}
-	.fill-header :global(svg) {
+	.fill-header img {
 		position: absolute;
 		inset: 0;
 	}
