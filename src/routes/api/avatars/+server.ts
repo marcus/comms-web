@@ -19,11 +19,13 @@ export const GET: RequestHandler = async ({ url }) => {
 
 export const PUT: RequestHandler = async ({ request, url }) => {
 	if (!mutationIsSameOrigin(request, url.origin)) return json({ error: 'Cross-origin avatar changes are not allowed' }, { status: 403 });
-	const body = await request.json() as { scope?: AvatarPreferenceScope; key?: string; agent_id?: string; recipe?: AvatarRecipe };
+	let body: { scope?: AvatarPreferenceScope; key?: string; agent_id?: string; recipe?: AvatarRecipe };
+	try { body = await request.json(); } catch { return json({ error: 'invalid JSON body' }, { status: 400 }); }
 	if (!body || Array.isArray(body) || typeof body !== 'object' || !body.recipe || Array.isArray(body.recipe) || typeof body.recipe !== 'object') return json({ error: 'invalid avatar preference' }, { status: 400 });
 	if (!body.scope || !scopes.has(body.scope) || !body.recipe?.style) return json({ error: 'scope and recipe.style are required' }, { status: 400 });
 	if (typeof body.recipe.style !== 'string' || body.recipe.style.length > 80 || (body.recipe.inputs && (Array.isArray(body.recipe.inputs) || typeof body.recipe.inputs !== 'object'))) return json({ error: 'invalid avatar recipe' }, { status: 400 });
 	if ([body.key, body.agent_id].some((value) => value !== undefined && (typeof value !== 'string' || value.length > 500))) return json({ error: 'invalid preference identity' }, { status: 400 });
+	if (body.scope === 'session' && (!body.key?.trim() || !body.agent_id?.trim())) return json({ error: 'agent_id and key are required for session scope' }, { status: 400 });
 	const key = target(body.scope, body.key, body.agent_id);
 	if (!key) return json({ error: 'key is required for agent and session scopes' }, { status: 400 });
 	const catalog = await getAvatarCatalog();
@@ -41,6 +43,7 @@ export const DELETE: RequestHandler = async ({ url, request }) => {
 	if (!mutationIsSameOrigin(request, url.origin)) return json({ error: 'Cross-origin avatar changes are not allowed' }, { status: 403 });
 	const scope = url.searchParams.get('scope') as AvatarPreferenceScope;
 	if (!scopes.has(scope)) return json({ error: 'valid scope is required' }, { status: 400 });
+	if (scope === 'session' && (!url.searchParams.get('key')?.trim() || !url.searchParams.get('agent_id')?.trim())) return json({ error: 'agent_id and key are required for session scope' }, { status: 400 });
 	const key = target(scope, url.searchParams.get('key') || undefined, url.searchParams.get('agent_id') || undefined);
 	if (!key) return json({ error: 'key is required for agent and session scopes' }, { status: 400 });
 	await writeAvatarPreference(scope, key, null);

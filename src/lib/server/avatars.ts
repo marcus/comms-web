@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { agentPortrait } from '$lib/agent-portrait';
-import type { AvatarRecipe } from '$lib/avatar-preferences';
+import { agentPortrait } from '../agent-portrait.ts';
+import type { AvatarRecipe } from '../avatar-preferences.ts';
 
 const execFileAsync = promisify(execFile);
 const cache = new Map<string, { bytes: Uint8Array; contentType: string }>();
@@ -12,6 +12,14 @@ let unavailableUntil = 0;
 
 export interface AvatarInputDescriptor { default: string; mixed_value?: string; values: { value: string; label: string; swatch?: string }[] }
 export interface AvatarStyle { id: string; name: string; native_width: number; native_height: number; inputs?: Record<string, AvatarInputDescriptor> }
+
+export function renderQuery(seed: string, recipe: AvatarRecipe): URLSearchParams {
+	const query = new URLSearchParams({ seed, style: recipe.style, format: 'svg' });
+	for (const [name, value] of Object.entries(recipe.inputs || {}).sort(([a], [b]) => a.localeCompare(b))) {
+		query.set(name, value);
+	}
+	return query;
+}
 
 function configuredEndpoint(): string | null { return process.env.AVATARS_ENDPOINT?.replace(/\/$/, '') || null; }
 
@@ -52,8 +60,7 @@ export async function renderAvatar(seed: string, recipe: AvatarRecipe): Promise<
 			const health = await healthResponse.json();
 			service = knownService = { endpoint, build: `${health.version || 'unknown'}:${health.commit || 'unknown'}`, checkedAt: Date.now() };
 		}
-		const query = new URLSearchParams({ seed, style: recipe.style, format: 'svg' });
-		for (const [name, value] of Object.entries(recipe.inputs || {}).sort(([a], [b]) => a.localeCompare(b))) query.set(name, value);
+		const query = renderQuery(seed, recipe);
 		const key = `${service.build}:${query.toString()}`;
 		const hit = cache.get(key);
 		if (hit) { cache.delete(key); cache.set(key, hit); return { ...hit, fallback: false }; }

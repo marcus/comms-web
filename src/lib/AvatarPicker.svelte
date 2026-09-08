@@ -19,7 +19,7 @@
 	function chooseStyle(style: AvatarStyle) { const next = { style: style.id, inputs: Object.fromEntries(Object.entries(style.inputs || {}).map(([name, descriptor]) => [name, descriptor.default])) }; recipe = next; void save(next); }
 	function setInput(name: string, event: Event) { const next = { ...recipe, inputs: { ...(recipe.inputs || {}), [name]: (event.currentTarget as HTMLSelectElement).value } }; recipe = next; void save(next); }
 	function changeScope(event: Event) { scope = (event.currentTarget as HTMLSelectElement).value as AvatarPreferenceScope; recipe = recipeForScope(records, scope, agentId, sessionRef); feedback = ''; }
-	async function reset() { const q = new URLSearchParams({ scope, agent_id: agentId }); if (key()) q.set('key', key()!); await fetch(`/api/avatars?${q}`, { method: 'DELETE' }); await load(); avatarRevision.value++; feedback = 'Inherited'; }
+	async function reset() { saving = true; feedback = ''; const q = new URLSearchParams({ scope, agent_id: agentId }); if (key()) q.set('key', key()!); const response = await fetch(`/api/avatars?${q}`, { method: 'DELETE' }); if (response.ok) { await load(); avatarRevision.value++; feedback = 'Inherited'; } else feedback = 'Could not reset'; saving = false; }
 </script>
 <span class="picker" style:width={`${size}px`} style:height={`${size}px`}>
 	<img src={imageUrl} alt="" />
@@ -28,10 +28,10 @@
 	<!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role, a11y_click_events_have_key_events -->
 	<section class="flyout" role="dialog" aria-label="Avatar style" onclick={(e) => e.stopPropagation()}>
 		<header><div><strong>Avatar</strong><small>{source === 'fallback' ? 'Gorey default' : `Inherited from ${source}`}</small></div><button onclick={() => open = false} aria-label="Close"><X size={15} /></button></header>
-		{#if defaultOnly}<label>Applies to<select disabled><option>Everyone by default</option></select></label>{:else}<label>Apply to<select value={scope} onchange={changeScope}><option value="default">Everyone by default</option><option value="agent">This agent</option>{#if sessionRef}<option value="session">This session</option>{/if}</select></label>{/if}
-		<div class="styles">{#each styles as style (style.id)}<button class:selected={recipe.style === style.id} onclick={() => chooseStyle(style)} title={style.name}><img src={previewUrl(style)} alt="" /><span>{style.name}</span></button>{/each}</div>
-		{#each Object.entries(selectedStyle?.inputs || {}) as [name, descriptor]}<label>{name}<select value={recipe.inputs?.[name] || (descriptor as AvatarInputDescriptor).default} onchange={(event) => setInput(name, event)}>{#each (descriptor as AvatarInputDescriptor).values as option}<option value={option.value}>{option.label}</option>{/each}</select></label>{/each}
-		<footer>{#if hasOverride() && !defaultOnly}<button class="reset" onclick={reset}>Use inherited</button>{/if}<small>{saving ? 'Saving…' : feedback}</small></footer>
+		{#if defaultOnly}<label>Applies to<select disabled><option>Everyone by default</option></select></label>{:else}<label>Apply to<select disabled={saving} value={scope} onchange={changeScope}><option value="default">Everyone by default</option><option value="agent">This agent</option>{#if sessionRef}<option value="session">This session</option>{/if}</select></label>{/if}
+		<div class="styles">{#each styles as style (style.id)}<button disabled={saving} class:selected={recipe.style === style.id} onclick={() => chooseStyle(style)} title={style.name}><img src={previewUrl(style)} alt="" /><span>{style.name}</span></button>{/each}</div>
+		{#each Object.entries(selectedStyle?.inputs || {}) as [name, descriptor]}<label>{name}<select disabled={saving} value={recipe.inputs?.[name] || (descriptor as AvatarInputDescriptor).default} onchange={(event) => setInput(name, event)}>{#each (descriptor as AvatarInputDescriptor).values as option}<option value={option.value}>{option.label}</option>{/each}</select></label>{/each}
+		<footer>{#if hasOverride() && !defaultOnly}<button disabled={saving} class="reset" onclick={reset}>Use inherited</button>{/if}<small>{saving ? 'Saving…' : feedback}</small></footer>
 	</section>{/if}
 </span>
 <style>

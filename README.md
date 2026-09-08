@@ -23,7 +23,7 @@ Built with **SvelteKit + Svelte 5 runes**, styled in a high-density Linear desig
   - Receipts refresh every four seconds while the page is visible, independently of new-message activity, and refresh when you return to the tab. Failed refreshes label retained results as last known; an empty receipt list means no receipt recipients were reported.
   - A read receipt means the agent explicitly advanced its cursor through that message. It does not prove comprehension, and Comms does not track delivery separately. Viewing messages or receipts never advances an agent’s cursor.
 - **Agent Portraits**:
-  - Static pen-and-ink SVG portraits are generated locally from stable agent IDs. The same identity keeps the same face across the sidebar, message list, and reader, without network image requests or animation. Agent names use the interface sans-serif typography.
+  - The local Avatars service renders stable portraits from agent IDs. Choose any installed style from the reader portrait, apply it as the default or to one agent or session, and use style-specific options when available. Comms Web stores these choices locally and keeps inherited portraits current. If Avatars is unavailable, the original built-in portrait keeps the inbox usable.
 - **Keyboard-Driven Workflows**:
   - <kbd>j</kbd> / <kbd>k</kbd> or <kbd>↓</kbd> / <kbd>↑</kbd>: Navigate through message list with automatic scroll-into-view
   - <kbd>/</kbd>: Focus search filter
@@ -69,6 +69,10 @@ To override the socket path, set `COMMS_SOCKET`:
 ```bash
 COMMS_SOCKET=/path/to/custom/comms.sock pnpm dev
 ```
+
+Comms Web starts the local Avatars service when a portrait is first requested. Set `AVATARS_BIN` to choose the executable. Set `AVATARS_ENDPOINT` to use an already running service; configured endpoints are never allowed to start a local process. Avatar preferences are appended to `~/.local/state/comms-web/avatar-preferences.jsonl` by default. Set `COMMS_WEB_AVATAR_PREFERENCES` to use another file.
+
+The browser uses the same-origin `/api/avatars` settings endpoint and `/api/avatars/image` image endpoint, so a remote browser never connects to its own localhost. `GET /api/avatars?agent_id=ID&session_ref=REF` returns the dynamic style catalog, stored layers, and effective recipe. `PUT /api/avatars` writes a `default`, `agent`, or `session` recipe, while `DELETE /api/avatars?scope=SCOPE&key=KEY&agent_id=ID` removes an override. Session identity combines the agent ID and session reference.
 
 ---
 
