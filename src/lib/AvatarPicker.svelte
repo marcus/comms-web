@@ -5,6 +5,8 @@
 	import { avatarRevision } from '$lib/avatar-revision.svelte';
 	let { agentId, sessionRef, size = 88, defaultOnly = false }: { agentId: string; sessionRef?: string; size?: number; defaultOnly?: boolean } = $props();
 	let open = $state(false), saving = $state(false), feedback = $state('');
+	let trigger = $state<HTMLButtonElement | null>(null), flyout = $state<HTMLElement | null>(null);
+	let flyoutLeft = $state(8), flyoutTop = $state(8);
 	let styles = $state<AvatarStyle[]>([]), records = $state<AvatarPreferenceRecord[]>([]);
 	let recipe = $state<AvatarRecipe>({ style: 'gorey' }), source = $state('fallback');
 	let scope = $state<AvatarPreferenceScope>('agent');
@@ -20,13 +22,31 @@
 	function setInput(name: string, event: Event) { const next = { ...recipe, inputs: { ...(recipe.inputs || {}), [name]: (event.currentTarget as HTMLSelectElement).value } }; recipe = next; void save(next); }
 	function changeScope(event: Event) { scope = (event.currentTarget as HTMLSelectElement).value as AvatarPreferenceScope; recipe = recipeForScope(records, scope, agentId, sessionRef); feedback = ''; }
 	async function reset() { saving = true; feedback = ''; const q = new URLSearchParams({ scope, agent_id: agentId }); if (key()) q.set('key', key()!); const response = await fetch(`/api/avatars?${q}`, { method: 'DELETE' }); if (response.ok) { await load(); avatarRevision.value++; feedback = 'Inherited'; } else feedback = 'Could not reset'; saving = false; }
+	function positionFlyout() {
+		if (!trigger || !flyout) return;
+		const anchor = trigger.getBoundingClientRect();
+		const panel = flyout.getBoundingClientRect();
+		const gap = 8, margin = 8;
+		flyoutLeft = Math.max(margin, Math.min(anchor.left, window.innerWidth - panel.width - margin));
+		const below = anchor.bottom + gap;
+		flyoutTop = below + panel.height <= window.innerHeight - margin
+			? below
+			: Math.max(margin, anchor.top - panel.height - gap);
+	}
+	function openPicker(event: MouseEvent) {
+		event.stopPropagation();
+		scope = defaultOnly ? 'default' : 'agent';
+		open = true;
+		void load().then(() => requestAnimationFrame(positionFlyout));
+		requestAnimationFrame(positionFlyout);
+	}
 </script>
 <span class="picker" style:width={`${size}px`} style:height={`${size}px`}>
 	<img src={imageUrl} alt="" />
-	<button class="open" onclick={(e) => { e.stopPropagation(); scope = defaultOnly ? 'default' : 'agent'; open = true; void load(); }} aria-label={defaultOnly ? 'Choose default avatar style' : 'Choose avatar style'}><Settings2 size={Math.max(12, Math.min(17, size / 4))} /></button>
+	<button bind:this={trigger} class="open" onclick={openPicker} aria-label={defaultOnly ? 'Choose default avatar style' : 'Choose avatar style'}><Settings2 size={Math.max(12, Math.min(17, size / 4))} /></button>
 	{#if open}<div class="backdrop" role="presentation" onclick={(e) => { e.stopPropagation(); open = false; }}></div>
 	<!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role, a11y_click_events_have_key_events -->
-	<section class="flyout" role="dialog" aria-label="Avatar style" onclick={(e) => e.stopPropagation()}>
+	<section bind:this={flyout} class="flyout" style:left={`${flyoutLeft}px`} style:top={`${flyoutTop}px`} role="dialog" aria-label="Avatar style" onclick={(e) => e.stopPropagation()}>
 		<header><div><strong>Avatar</strong><small>{source === 'fallback' ? 'Gorey default' : `Inherited from ${source}`}</small></div><button onclick={() => open = false} aria-label="Close"><X size={15} /></button></header>
 		{#if defaultOnly}<label>Applies to<select disabled><option>Everyone by default</option></select></label>{:else}<label>Apply to<select disabled={saving} value={scope} onchange={changeScope}><option value="default">Everyone by default</option><option value="agent">This agent</option>{#if sessionRef}<option value="session">This session</option>{/if}</select></label>{/if}
 		<div class="styles">{#each styles as style (style.id)}<button disabled={saving} class:selected={recipe.style === style.id} onclick={() => chooseStyle(style)} title={style.name}><img src={previewUrl(style)} alt="" /><span>{style.name}</span></button>{/each}</div>
@@ -35,5 +55,5 @@
 	</section>{/if}
 </span>
 <style>
-	.picker{display:inline-block;flex-shrink:0;position:relative;border:1px solid #bbb49a55;background:#d6d0bb;border-radius:50%}.picker>img{display:block;width:100%;height:100%;border-radius:50%;object-fit:cover}.open{position:absolute;inset:0;border-radius:50%;opacity:0;background:#24231db8;color:#fff;display:grid;place-items:center}.picker:hover>.open,.open:focus-visible{opacity:1}.backdrop{position:fixed;inset:0;z-index:90}.flyout{position:absolute;z-index:91;top:calc(100% + 8px);left:0;width:280px;padding:12px;background:var(--bg-sidebar);border:1px solid var(--border-default);box-shadow:0 12px 36px #0005;color:var(--text-primary)}header,footer{display:flex;align-items:center;justify-content:space-between;gap:8px}header{margin-bottom:12px}header div{display:flex;flex-direction:column}small{color:var(--text-muted);font-size:10px}label{display:grid;gap:4px;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em}select{background:var(--bg-app);color:var(--text-primary);border:1px solid var(--border-default);padding:6px;font-size:11px}.styles{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin:10px 0}.styles button{border:1px solid var(--border-subtle);padding:4px;color:var(--text-secondary);font-size:9px;overflow:hidden}.styles button.selected{border-color:var(--accent-default);color:var(--accent-default)}.styles img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:50%;display:block;margin-bottom:3px}footer{margin-top:12px;min-height:26px;justify-content:flex-end}.reset{padding:5px 9px;border:1px solid var(--border-default);font-size:11px;margin-right:auto;color:var(--text-muted)}
+	.picker{display:inline-block;flex-shrink:0;position:relative;border:1px solid #bbb49a55;background:#d6d0bb;border-radius:50%}.picker>img{display:block;width:100%;height:100%;border-radius:50%;object-fit:cover}.open{position:absolute;inset:0;border-radius:50%;opacity:0;background:#24231db8;color:#fff;display:grid;place-items:center}.picker:hover>.open,.open:focus-visible{opacity:1}.backdrop{position:fixed;inset:0;z-index:90}.flyout{position:fixed;z-index:91;width:280px;max-height:calc(100vh - 16px);overflow-y:auto;padding:12px;background:var(--bg-sidebar);border:1px solid var(--border-default);box-shadow:0 12px 36px #0005;color:var(--text-primary)}header,footer{display:flex;align-items:center;justify-content:space-between;gap:8px}header{margin-bottom:12px}header div{display:flex;flex-direction:column}small{color:var(--text-muted);font-size:10px}label{display:grid;gap:4px;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em}select{background:var(--bg-app);color:var(--text-primary);border:1px solid var(--border-default);padding:6px;font-size:11px}.styles{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin:10px 0}.styles button{border:1px solid var(--border-subtle);padding:4px;color:var(--text-secondary);font-size:9px;overflow:hidden}.styles button.selected{border-color:var(--accent-default);color:var(--accent-default)}.styles img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:50%;display:block;margin-bottom:3px}footer{margin-top:12px;min-height:26px;justify-content:flex-end}.reset{padding:5px 9px;border:1px solid var(--border-default);font-size:11px;margin-right:auto;color:var(--text-muted)}
 </style>
