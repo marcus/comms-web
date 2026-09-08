@@ -9,8 +9,14 @@ export PORT=9111
 export HOST=127.0.0.1
 export NODE_ENV=production
 
-if [ ! -f "build/index.js" ]; then
-    pnpm build
+# Rebuild on every start so the served app matches the working tree. A failed
+# build must not take the service down, so fall back to the previous build.
+if ! pnpm build; then
+    echo "build failed; falling back to existing build/" >&2
+    if [ ! -f "build/index.js" ]; then
+        echo "no previous build to fall back to" >&2
+        exit 1
+    fi
 fi
 
 exec node build/index.js
