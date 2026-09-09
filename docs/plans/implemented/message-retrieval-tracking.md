@@ -1,7 +1,7 @@
 # Comms message retrieval tracking (pointer)
 
 This plan is orchestrated from the comms repo. The living document is
-`~/code/comms/docs/plans/active/message-retrieval-tracking.md`.
+`~/code/comms/docs/plans/implemented/message-retrieval-tracking.md`.
 
 Comms Web's share was phase 6 there, and it is done: the receipts route and
 validator consume `{subscribers, inspectors}` with `seen_at`, `inspected_at`,
