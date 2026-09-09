@@ -1,14 +1,49 @@
 <script lang="ts">
-	import { CheckCheck, ChevronRight, Clock, RefreshCw } from '@lucide/svelte';
-	import { watchMessageReceipts, type ReceiptState } from './receipts';
+	import { Check, CheckCheck, ChevronRight, Clock, Eye, RefreshCw } from '@lucide/svelte';
+	import { receiptStateOf, watchMessageReceipts, type AgentReceiptState, type ReceiptState } from './receipts';
 	import { formatExactDate, formatTimeAgo } from './utils';
 
 	let { messageId, now }: { messageId: string; now: number } = $props();
-	let receiptState = $state<ReceiptState>({ receipts: null, loading: true, error: false, checkedAt: null });
+	let receiptState = $state<ReceiptState>({ report: null, loading: true, error: false, checkedAt: null });
 	let retry = $state<(() => Promise<void>) | null>(null);
-	const readers = $derived(receiptState.receipts?.filter((receipt) => receipt.state === 'read') ?? []);
-	const orderedReceipts = $derived([...(receiptState.receipts ?? [])].sort((a, b) => Number(b.state === 'read') - Number(a.state === 'read')));
-	const names = $derived(readers.slice(0, 2).map((receipt) => `@${receipt.agent.handle}`).join(', '));
+
+	const subscribers = $derived(receiptState.report?.subscribers ?? []);
+	const inspectors = $derived(receiptState.report?.inspectors ?? []);
+	const anyone = $derived(subscribers.length > 0 || inspectors.length > 0);
+
+	const rank: Record<AgentReceiptState, number> = { read: 0, inspected: 1, seen: 2, unseen: 3 };
+	const orderedSubscribers = $derived(
+		[...subscribers].sort((a, b) => rank[receiptStateOf(a)] - rank[receiptStateOf(b)])
+	);
+	const byState = $derived({
+		read: subscribers.filter((entry) => receiptStateOf(entry) === 'read'),
+		inspected: subscribers.filter((entry) => receiptStateOf(entry) === 'inspected'),
+		seen: subscribers.filter((entry) => receiptStateOf(entry) === 'seen')
+	});
+
+	/** The strongest signal any subscriber reached, which the collapsed line leads with. */
+	const lead = $derived<AgentReceiptState>(
+		byState.read.length ? 'read' : byState.inspected.length ? 'inspected' : byState.seen.length ? 'seen' : 'unseen'
+	);
+	const names = (entries: { agent: { handle: string } }[]) =>
+		entries.slice(0, 2).map((entry) => `@${entry.agent.handle}`).join(', ') +
+		(entries.length > 2 ? ` +${entries.length - 2}` : '');
+	const summary = $derived(
+		lead === 'read'
+			? `${receiptState.error ? 'Last known readers:' : 'Read by'} ${names(byState.read)}`
+			: lead === 'inspected'
+				? `Opened by ${names(byState.inspected)}, not acknowledged`
+				: lead === 'seen'
+					? `Previewed by ${names(byState.seen)}, not acknowledged`
+					: receiptState.error
+						? 'No retrieval at last check'
+						: 'Not yet retrieved by any agent'
+	);
+	const inspectorNote = $derived(
+		inspectors.length ? ` · ${inspectors.length} inspector${inspectors.length === 1 ? '' : 's'}` : ''
+	);
+
+	const visits = (count?: number) => (count && count > 1 ? ` · ${count} visits` : '');
 
 	$effect(() => {
 		const watch = watchMessageReceipts(messageId, (next) => { receiptState = next; }, {
@@ -24,36 +59,63 @@
 	});
 </script>
 
-<div class="message-receipts" aria-label="Message read acknowledgments">
+<div class="message-receipts" aria-label="Message acknowledgments and retrieval">
 	{#if receiptState.loading}
 		<div class="receipt-status"><Clock size={13} /><span>Checking read status…</span></div>
-	{:else if receiptState.receipts?.length}
+	{:else if anyone}
 		<details>
-			<summary class:has-readers={readers.length > 0}>
-				{#if readers.length}<CheckCheck size={14} />{:else}<Clock size={13} />{/if}
-				<span class="receipt-summary">
-					{#if readers.length}
-						{receiptState.error ? 'Last known readers:' : 'Read by'} {names}{readers.length > 2 ? ` +${readers.length - 2}` : ''}
-					{:else}
-						{receiptState.error ? 'No reads at last check' : 'No read acknowledgments yet'}
-					{/if}
-				</span>
-				<span class="receipt-count">{readers.length} of {receiptState.receipts.length}</span>
+			<summary class:has-readers={lead === 'read'}>
+				{#if lead === 'read'}<CheckCheck size={14} />
+				{:else if lead === 'inspected'}<Eye size={13} />
+				{:else if lead === 'seen'}<Check size={13} />
+				{:else}<Clock size={13} />{/if}
+				<span class="receipt-summary">{summary}{inspectorNote}</span>
+				<span class="receipt-count" title="Acknowledgments, not retrievals">{byState.read.length} of {subscribers.length}</span>
 				<ChevronRight size={12} class="receipt-chevron" />
 			</summary>
 			<div class="receipt-details">
-				{#each orderedReceipts as receipt (receipt.agent.id)}
+				{#each orderedSubscribers as receipt (receipt.agent.id)}
+					{@const state = receiptStateOf(receipt)}
 					<div class="receipt-person">
 						<span class="receipt-handle" title={receipt.agent.display_name || receipt.agent.handle}>@{receipt.agent.handle}</span>
-						<span class="receipt-person-state" class:read={receipt.state === 'read'}>
-							{#if receipt.state === 'read'}
+						<span class="receipt-person-state" class:read={state === 'read'} class:inspected={state === 'inspected'}>
+							{#if state === 'read'}
 								<CheckCheck size={12} />
 								{#if receipt.read_at}<time datetime={receipt.read_at} title={formatExactDate(receipt.read_at)}>Read {formatTimeAgo(receipt.read_at, now)}</time>{:else}Marked read{/if}
-							{:else}<Clock size={11} /><span>Not marked read</span>{/if}
+							{:else if state === 'inspected'}
+								<Eye size={12} />
+								<time datetime={receipt.inspected_at} title={formatExactDate(receipt.inspected_at!)}>Opened {formatTimeAgo(receipt.inspected_at!, now)}{visits(receipt.seen_count)}</time>
+							{:else if state === 'seen'}
+								<Check size={12} />
+								<time datetime={receipt.seen_at} title={formatExactDate(receipt.seen_at!)}>Previewed {formatTimeAgo(receipt.seen_at!, now)}{visits(receipt.seen_count)}</time>
+							{:else}
+								<Clock size={11} /><span>Not retrieved</span>
+							{/if}
 						</span>
 					</div>
 				{/each}
-				<p class="receipt-explanation">A read acknowledgment means the agent marked messages read through this point. Delivery is not tracked separately.</p>
+				{#if inspectors.length}
+					<p class="receipt-section">Also inspected by</p>
+					{#each inspectors as inspector (inspector.agent.id)}
+						<div class="receipt-person">
+							<span class="receipt-handle" title={inspector.agent.display_name || inspector.agent.handle}>@{inspector.agent.handle}</span>
+							<span class="receipt-person-state inspected">
+								<Eye size={12} />
+								{#if inspector.inspected_at}
+									<time datetime={inspector.inspected_at} title={formatExactDate(inspector.inspected_at)}>Opened {formatTimeAgo(inspector.inspected_at, now)}{visits(inspector.seen_count)}</time>
+								{:else if inspector.seen_at}
+									<time datetime={inspector.seen_at} title={formatExactDate(inspector.seen_at)}>Previewed {formatTimeAgo(inspector.seen_at, now)}{visits(inspector.seen_count)}</time>
+								{:else}<span>Retrieved</span>{/if}
+							</span>
+						</div>
+					{/each}
+				{/if}
+				<p class="receipt-explanation">
+					Read means the agent advanced its read cursor through this message.
+					Opened means the full body was returned to it.
+					Previewed means it saw the headline in its inbox.
+					Delivery is not tracked separately.
+				</p>
 			</div>
 		</details>
 	{:else if !receiptState.error}
@@ -84,6 +146,8 @@
 	.receipt-handle { color: var(--text-secondary); min-width: 0; overflow-wrap: anywhere; }
 	.receipt-person-state { display: flex; align-items: center; justify-content: flex-end; gap: 5px; text-align: right; font-size: 10px; flex-shrink: 0; }
 	.receipt-person-state.read { color: var(--text-receipt-read); }
+	.receipt-person-state.inspected { color: var(--text-secondary); }
+	.receipt-section { border-top: 1px solid var(--border-subtle); margin-top: 6px; padding-top: 10px; font-size: 10px; color: var(--text-muted); }
 	.receipt-explanation { border-top: 1px solid var(--border-subtle); margin-top: 6px; padding-top: 10px; padding-bottom: 4px; font-size: 10px; line-height: 1.6; color: var(--text-muted); }
 	.receipt-error { flex-wrap: wrap; }
 	.receipt-error button { color: var(--text-secondary); display: inline-flex; align-items: center; gap: 5px; padding: 3px 5px; font-size: 10px; }

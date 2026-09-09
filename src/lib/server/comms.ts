@@ -61,10 +61,32 @@ export interface CommsHandshake {
 	capabilities: string[];
 }
 
-export interface CommsReceipt {
+/**
+ * What actually reached an agent, independent of whether it acknowledged.
+ * `inspected_at` means a full body was returned to it; `seen_at` alone means it
+ * only saw an inbox preview. Both are absent when nothing was recorded.
+ */
+export interface CommsRetrieval {
+	seen_at?: string;
+	inspected_at?: string;
+	seen_count?: number;
+}
+
+/** A relevant subscriber: the cursor fact plus what reached them. */
+export interface CommsReceipt extends CommsRetrieval {
 	agent: CommsAgent;
 	state: 'read' | 'unread';
 	read_at?: string;
+}
+
+/** An identified reader that is not subscribed, such as an orchestrator. */
+export interface CommsInspector extends CommsRetrieval {
+	agent: CommsAgent;
+}
+
+export interface CommsReceiptReport {
+	subscribers: CommsReceipt[];
+	inspectors: CommsInspector[];
 }
 
 export function getSocketPath(): string {

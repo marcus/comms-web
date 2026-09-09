@@ -1,25 +1,51 @@
-import type { CommsReceipt } from './server/comms';
+import type { CommsInspector, CommsReceipt, CommsReceiptReport, CommsRetrieval } from './server/comms';
 
 export interface ReceiptState {
-	receipts: CommsReceipt[] | null;
+	report: CommsReceiptReport | null;
 	loading: boolean;
 	error: boolean;
 	checkedAt: number | null;
 }
 
-type ReceiptFetcher = (messageId: string, signal: AbortSignal) => Promise<CommsReceipt[]>;
+/**
+ * The one word a reader needs, derived from the two independent facts a
+ * receipt carries. Kept as a pure function so the web and the CLI agree:
+ * acknowledged wins, then a full body, then a preview, then nothing.
+ */
+export type AgentReceiptState = 'read' | 'inspected' | 'seen' | 'unseen';
 
-export async function fetchReceiptList(messageId: string, signal: AbortSignal): Promise<CommsReceipt[]> {
+export function receiptStateOf(entry: CommsRetrieval & { state?: string }): AgentReceiptState {
+	if (entry.state === 'read') return 'read';
+	if (entry.inspected_at) return 'inspected';
+	if (entry.seen_at) return 'seen';
+	return 'unseen';
+}
+
+type ReceiptFetcher = (messageId: string, signal: AbortSignal) => Promise<CommsReceiptReport>;
+
+const isAgent = (value: any) => Boolean(value?.agent?.id && value?.agent?.handle);
+const isSubscriber = (value: any): value is CommsReceipt =>
+	isAgent(value) && (value.state === 'read' || value.state === 'unread');
+const isInspector = (value: any): value is CommsInspector => isAgent(value);
+
+export async function fetchReceiptReport(
+	messageId: string,
+	signal: AbortSignal
+): Promise<CommsReceiptReport> {
 	const response = await fetch(`/api/receipts/${encodeURIComponent(messageId)}`, {
 		signal,
 		cache: 'no-store'
 	});
 	if (!response.ok) throw new Error('Read status unavailable');
 	const data = await response.json();
-	if (!Array.isArray(data.receipts) || !data.receipts.every((receipt: CommsReceipt) =>
-		receipt?.agent?.id && receipt.agent.handle && (receipt.state === 'read' || receipt.state === 'unread')
-	)) throw new Error('Invalid read status response');
-	return data.receipts;
+	if (
+		!Array.isArray(data.subscribers) ||
+		!data.subscribers.every(isSubscriber) ||
+		!Array.isArray(data.inspectors) ||
+		!data.inspectors.every(isInspector)
+	)
+		throw new Error('Invalid read status response');
+	return { subscribers: data.subscribers, inspectors: data.inspectors };
 }
 
 /** Observe the selected message independently of new-message events. Never advances a read cursor. */
@@ -33,8 +59,8 @@ export function watchMessageReceipts(
 		isVisible?: () => boolean;
 	} = {}
 ) {
-	const fetchReceipts = options.fetchReceipts ?? fetchReceiptList;
-	let state: ReceiptState = { receipts: null, loading: true, error: false, checkedAt: null };
+	const fetchReceipts = options.fetchReceipts ?? fetchReceiptReport;
+	let state: ReceiptState = { report: null, loading: true, error: false, checkedAt: null };
 	let stopped = false;
 	let pending = false;
 	let controller: AbortController | null = null;
@@ -47,9 +73,9 @@ export function watchMessageReceipts(
 		const request = controller;
 		timeout = setTimeout(() => request.abort(), options.timeoutMs ?? 10_000);
 		try {
-			const receipts = await fetchReceipts(messageId, request.signal);
+			const report = await fetchReceipts(messageId, request.signal);
 			if (stopped || request.signal.aborted) return;
-			state = { receipts, loading: false, error: false, checkedAt: Date.now() };
+			state = { report, loading: false, error: false, checkedAt: Date.now() };
 			onChange(state);
 		} catch {
 			if (stopped) return;

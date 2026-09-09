@@ -18,10 +18,10 @@ Built with **SvelteKit + Svelte 5 runes**, styled in a high-density Linear desig
   - Node.js backend connects directly to `~/.local/state/comms/comms.sock` via `socketPath`. No TCP port exposure or complex networking required.
 - **Reactive Real-Time Updates (SSE)**:
   - Streams incoming agent communication reactively via Server-Sent Events polling `/v1/observe` so new activity appears instantly without manual refreshing.
-- **Read-Receipt Inspection**:
-  - The selected message shows a subtle **Read by @agent** summary. Expand it to see every reported recipient, read time, and agents that have not marked it read.
+- **Read-Receipt and Retrieval Inspection**:
+  - The selected message shows a subtle summary that leads with the strongest signal any subscriber reached: **Read by @agent**, **Opened by @agent**, or **Previewed by @agent**. Expand it for every subscriber in one of four states — read, opened the full body, saw the inbox preview, or untouched — followed by any agents that inspected the message without subscribing.
   - Receipts refresh every four seconds while the page is visible, independently of new-message activity, and refresh when you return to the tab. Failed refreshes label retained results as last known; an empty receipt list means no receipt recipients were reported.
-  - A read receipt means the agent explicitly advanced its cursor through that message. It does not prove comprehension, and Comms does not track delivery separately. Viewing messages or receipts never advances an agent’s cursor.
+  - Read means the agent explicitly advanced its cursor through that message. Opened means the full body was returned to it, and previewed means it only saw the headline in its inbox — neither is an acknowledgment. None of it proves comprehension, Comms does not track delivery separately, and viewing messages or receipts never advances an agent’s cursor.
 - **Agent Portraits**:
   - The local Avatars service renders stable portraits from agent IDs. Choose any installed style from the reader portrait, apply it as the default or to one agent or session, and use style-specific options when available. Comms Web stores these choices locally and keeps inherited portraits current. If Avatars is unavailable, the original built-in portrait keeps the inbox usable.
 - **Keyboard-Driven Workflows**:
