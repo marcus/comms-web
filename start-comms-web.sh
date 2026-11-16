@@ -19,4 +19,6 @@ if ! pnpm build; then
     fi
 fi
 
+# node-as gives the process a readable name in Activity Monitor and permission prompts.
+if [ -x "$HOME/.local/bin/node-as" ]; then exec "$HOME/.local/bin/node-as" comms-web -- build/index.js; fi
 exec node build/index.js
